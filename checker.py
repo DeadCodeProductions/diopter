@@ -20,6 +20,7 @@ import parsers
 import patchdatabase
 import preprocessing
 import utils
+from dead_instrumenter.instrumenter import annotate_with_static
 
 
 # ==================== Sanitize ====================
@@ -250,6 +251,11 @@ def sanitize(
         bool: True if nothing indicative of undefined behaviour is found.
     """
     # Taking advantage of shortciruit logic...
+    # a = check_compiler_warnings(gcc, clang, file, flags, cc_timeout)
+    # b = use_ub_sanitizers(clang, file, flags, cc_timeout, exe_timeout)
+    # c = verify_with_ccomp(ccomp, file, flags, compcert_timeout)
+    # print(a,b,c)
+    # return a and b and c
     try:
         return (
             check_compiler_warnings(gcc, clang, file, flags, cc_timeout)
@@ -263,23 +269,23 @@ def sanitize(
 # ==================== Checker ====================
 
 
-def annotate_program_with_static(
-    annotator: str, file: Path, include_paths: list[str]
-) -> None:
-    """Turn all global variables and functions into static ones.
-
-    Args:
-        annotator (str): Path to annotator executable or name in $PATH.
-        file (Path): Path to file to annotate.
-        include_paths (list[str]): Include paths to use when compiling.
-    """
-    cmd = [annotator, str(file)]
-    for path in include_paths:
-        cmd.append(f"--extra-arg=-isystem{path}")
-    try:
-        utils.run_cmd(cmd)
-    except subprocess.CalledProcessError as e:
-        raise Exception("Static annotator failed to annotate {file}! {e}")
+# def annotate_program_with_static(
+#    annotator: str, file: Path, include_paths: list[str]
+# ) -> None:
+#    """Turn all global variables and functions into static ones.
+#
+#    Args:
+#        annotator (str): Path to annotator executable or name in $PATH.
+#        file (Path): Path to file to annotate.
+#        include_paths (list[str]): Include paths to use when compiling.
+#    """
+#    cmd = [annotator, str(file)]
+#    for path in include_paths:
+#        cmd.append(f"--extra-arg=-isystem{path}")
+#    try:
+#        utils.run_cmd(cmd)
+#    except subprocess.CalledProcessError as e:
+#        raise Exception("Static annotator failed to annotate {file}! {e}")
 
 
 class Checker:
@@ -374,12 +380,10 @@ class Checker:
                 print(case.code, file=new_cfile)
 
             # TODO: Handle include_paths better
-            include_paths = utils.find_include_paths(
-                self.config.llvm.sane_version, tf.name, case.bad_setting.get_flag_str()
-            )
-            annotate_program_with_static(
-                self.config.static_annotator, Path(tf.name), include_paths
-            )
+            import pdb
+
+            pdb.set_trace()
+            annotate_with_static(Path(tf.name), case.bad_setting.get_flag_cmd())
 
             with open(tf.name, "r") as annotated_file:
                 static_code = annotated_file.read()
