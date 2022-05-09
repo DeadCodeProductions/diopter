@@ -1,27 +1,22 @@
 #!/usr/bin/env python3
 
 import copy
-import json
 import logging
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
-from contextlib import contextmanager
 from pathlib import Path
 from types import TracebackType
 from typing import Optional
 
-import builder
 import parsers
-import patchdatabase
 import preprocessing
 import utils
 from dead_instrumenter.instrumenter import annotate_with_static
-
+from ccbuildercached import Repo, BuilderWithCache, BuildException, CompilerConfig, get_compiler_config, PatchDB
 
 # ==================== Sanitize ====================
 def get_cc_output(cc: str, file: Path, flags: str, cc_timeout: int) -> tuple[int, str]:
@@ -251,11 +246,11 @@ def sanitize(
         bool: True if nothing indicative of undefined behaviour is found.
     """
     # Taking advantage of shortciruit logic...
-    # a = check_compiler_warnings(gcc, clang, file, flags, cc_timeout)
-    # b = use_ub_sanitizers(clang, file, flags, cc_timeout, exe_timeout)
-    # c = verify_with_ccomp(ccomp, file, flags, compcert_timeout)
-    # print(a,b,c)
-    # return a and b and c
+    a = check_compiler_warnings(gcc, clang, file, flags, cc_timeout)
+    b = use_ub_sanitizers(clang, file, flags, cc_timeout, exe_timeout)
+    c = verify_with_ccomp(ccomp, file, flags, compcert_timeout)
+    logging.info(f"Sanitize: compW: {a} UB: {b} ccomp: {c}")
+    return a and b and c
     try:
         return (
             check_compiler_warnings(gcc, clang, file, flags, cc_timeout)
@@ -289,7 +284,7 @@ def sanitize(
 
 
 class Checker:
-    def __init__(self, config: utils.NestedNamespace, bldr: builder.Builder):
+    def __init__(self, config: utils.NestedNamespace, bldr: BuilderWithCache):
         self.config = config
         self.builder = bldr
         return
@@ -312,14 +307,14 @@ class Checker:
         # all the good settings do not.
 
         marker_prefix = utils.get_marker_prefix(case.marker)
-        found_in_bad = builder.find_alive_markers(
+        found_in_bad = utils.find_alive_markers(
             case.code, case.bad_setting, marker_prefix, self.builder
         )
         uninteresting = False
         if case.marker not in found_in_bad:
             return False
         for good_setting in case.good_settings:
-            found_in_good = builder.find_alive_markers(
+            found_in_good = utils.find_alive_markers(
                 case.code, good_setting, marker_prefix, self.builder
             )
             if case.marker in found_in_good:
@@ -380,20 +375,17 @@ class Checker:
                 print(case.code, file=new_cfile)
 
             # TODO: Handle include_paths better
-            import pdb
-
-            pdb.set_trace()
             annotate_with_static(Path(tf.name), case.bad_setting.get_flag_cmd())
 
             with open(tf.name, "r") as annotated_file:
                 static_code = annotated_file.read()
 
-            asm_bad = builder.get_asm_str(static_code, case.bad_setting, self.builder)
+            asm_bad = utils.get_asm_str(static_code, case.bad_setting, self.builder)
             uninteresting = False
             if case.marker not in asm_bad:
                 uninteresting = True
             for good_setting in case.good_settings:
-                asm_good = builder.get_asm_str(static_code, good_setting, self.builder)
+                asm_good = utils.get_asm_str(static_code, good_setting, self.builder)
                 if case.marker in asm_good:
                     uninteresting = True
                     break
@@ -401,12 +393,12 @@ class Checker:
 
     def _emtpy_marker_code_str(self, case: utils.Case) -> str:
         marker_prefix = utils.get_marker_prefix(case.marker)
-        p = re.compile(f"void {marker_prefix}(.*)\(void\);")
+        p = re.compile(f"void {marker_prefix}(.*)\(void\);(.*)")
         empty_body_code = ""
         for line in case.code.split("\n"):
             m = p.match(line)
             if m:
-                empty_body_code += f"\nvoid {marker_prefix}{m.group(1)}(void){{}}"
+                empty_body_code += f"\nvoid {marker_prefix}{m.group(1)}(void){{}}\n{m.group(2)}"
             else:
                 empty_body_code += f"\n{line}"
 
@@ -512,8 +504,8 @@ def override_good(
 if __name__ == "__main__":
     config, args = utils.get_config_and_parser(parsers.checker_parser())
 
-    patchdb = patchdatabase.PatchDB(config.patchdb)
-    bldr = builder.Builder(config, patchdb, args.cores)
+    patchdb = PatchDB(config.patchdb)
+    bldr = BuilderWithCache(Path(config.cachedir), patchdb, args.cores)
     chkr = Checker(config, bldr)
 
     file = Path(args.file)

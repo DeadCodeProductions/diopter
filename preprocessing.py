@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Generator, Iterable, Optional
 
-import builder
+from ccbuildercached import Repo, BuilderWithCache, BuildException, CompilerConfig, get_compiler_config, PatchDB
 import utils
 
 """
@@ -57,7 +57,7 @@ def preprocess_csmith_file(
     path: os.PathLike[str],
     marker_prefix: str,
     compiler_setting: utils.CompilerSetting,
-    bldr: builder.Builder,
+    bldr: BuilderWithCache,
 ) -> str:
 
     with tempfile.NamedTemporaryFile(suffix=".c") as tf:
@@ -69,7 +69,7 @@ def preprocess_csmith_file(
             else compiler_setting.additional_flags
         )
         cmd = [
-            str(builder.get_compiler_executable(compiler_setting, bldr)),
+            str(utils.get_compiler_executable(compiler_setting, bldr)),
             tf.name,
             "-P",
             "-E",
@@ -110,7 +110,7 @@ def preprocess_csmith_code(
     code: str,
     marker_prefix: str,
     compiler_setting: utils.CompilerSetting,
-    bldr: builder.Builder,
+    bldr: BuilderWithCache,
 ) -> Optional[str]:
     """Will *try* to preprocess code as if it comes from csmith.
 
