@@ -12,11 +12,20 @@ from pathlib import Path
 from types import TracebackType
 from typing import Optional
 
+from ccbuildercached import (
+    BuilderWithCache,
+    BuildException,
+    CompilerConfig,
+    PatchDB,
+    Repo,
+    get_compiler_config,
+)
+from dead_instrumenter.instrumenter import annotate_with_static
+
 import parsers
 import preprocessing
 import utils
-from dead_instrumenter.instrumenter import annotate_with_static
-from ccbuildercached import Repo, BuilderWithCache, BuildException, CompilerConfig, get_compiler_config, PatchDB
+
 
 # ==================== Sanitize ====================
 def get_cc_output(cc: str, file: Path, flags: str, cc_timeout: int) -> tuple[int, str]:
@@ -249,7 +258,7 @@ def sanitize(
     a = check_compiler_warnings(gcc, clang, file, flags, cc_timeout)
     b = use_ub_sanitizers(clang, file, flags, cc_timeout, exe_timeout)
     c = verify_with_ccomp(ccomp, file, flags, compcert_timeout)
-    logging.info(f"Sanitize: compW: {a} UB: {b} ccomp: {c}")
+    logging.debug(f"Sanitize: compW: {a} UB: {b} ccomp: {c}")
     return a and b and c
     try:
         return (
@@ -398,7 +407,9 @@ class Checker:
         for line in case.code.split("\n"):
             m = p.match(line)
             if m:
-                empty_body_code += f"\nvoid {marker_prefix}{m.group(1)}(void){{}}\n{m.group(2)}"
+                empty_body_code += (
+                    f"\nvoid {marker_prefix}{m.group(1)}(void){{}}\n{m.group(2)}"
+                )
             else:
                 empty_body_code += f"\n{line}"
 
