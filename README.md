@@ -1,4 +1,7 @@
-# DEAD: Dead Code Elimination based Automatic Differential Testing
+# Diopter: Differential Optimization Tester
+
+
+# ~~DEAD: Dead Code Elimination based Automatic Differential Testing~~
 
 DEAD is a tool to find and process compiler regressions and other missed optimizations automatically to produce reports.
 
