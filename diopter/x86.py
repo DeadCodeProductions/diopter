@@ -78,6 +78,9 @@ class Instruction:
     op3: Optional[Operand] = None
 
 
+AsmLine: TypeAlias = Union[Instruction, Label, Global]
+
+
 def get_register_core(reg: str) -> str:
     if reg[0] == "r" and reg[1:].isdigit():
         core = reg[1:]

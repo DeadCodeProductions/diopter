@@ -52,9 +52,12 @@ t_DQUOTE = r"\""
 t_INTEGER = r"-?\d+([uU]|[lL]|[uU][lL]|[lL][uU])?"
 
 
+class LexError(Exception):
+    pass
+
+
 def t_error(t: LexToken) -> None:
-    print("Illegal character %s" % repr(t.value[0]))
-    exit(1)
+    raise LexError("Illegal character %s" % repr(t.value[0]))
 
 
 def p_line_1(p: Production) -> None:
@@ -187,9 +190,7 @@ def p_global_value_3(p: Production) -> None:
     p[0] = p[2]
 
 
-def parse_x86(
-    lines: str, debug: bool = False
-) -> list[Union[x86.Instruction, x86.Label, x86.Global]]:
+def parse_x86(lines: str, debug: bool = False) -> list[x86.AsmLine]:
     lexer = lex.lex()  # type:ignore
     parser = yacc.yacc()  # type:ignore
     output = []
@@ -197,6 +198,8 @@ def parse_x86(
         line, _, _ = line.strip().partition("#")
         if not line:
             continue
-        output.append(parser.parse(line, debug=debug, lexer=lexer))
-
+        try:
+            output.append(parser.parse(line, debug=debug, lexer=lexer))
+        except LexError as e:
+            raise LexError(f"Could not lex {line}: {e.__str__()}")
     return output
