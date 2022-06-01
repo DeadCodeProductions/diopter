@@ -10,6 +10,12 @@ class Label:
 
 
 @dataclass
+class Directive:
+    identifier: str
+    arguments: list[str]
+
+
+@dataclass
 class Global:
     type_: str
     value: Union[str, int, Label]
@@ -57,6 +63,7 @@ class IndirectAddress:
     disp: Optional[int] = None
     index: Optional[Register] = None
     scale: Optional[int] = None
+    segment: Optional[Register] = None
 
 
 @dataclass
@@ -82,7 +89,11 @@ AsmLine: TypeAlias = Union[Instruction, Label, Global]
 
 
 def get_register_core(reg: str) -> str:
-    if reg[0] == "r" and reg[1:].isdigit():
+    if reg in ["cs", "ds", "es", "ss", "fs", "gs"]:
+        return reg
+    if reg.startswith("xmm"):
+        return reg
+    elif reg[0] == "r" and reg[1:].isdigit():
         core = reg[1:]
     elif reg[0] == "r" and reg[1:-1].isdigit():
         core = reg[1:-1]
@@ -115,6 +126,8 @@ def get_register_core(reg: str) -> str:
 
 
 def get_register_length(reg: str) -> int:
+    if reg.startswith("xmm"):
+        return 128
     if reg in [
         "rax",
         "rbx",
@@ -124,6 +137,7 @@ def get_register_length(reg: str) -> int:
         "rsi",
         "rdi",
         "rip",
+        "rsp",
         "r8",
         "r9",
         "r10",
@@ -194,4 +208,7 @@ def get_register_length(reg: str) -> int:
         "r15b",
     ]:
         return 8
+
+    if reg in ["cs", "ds", "es", "ss", "fs", "gs"]:
+        return 16
     raise Exception(f"get_register_length, unknown register {reg}")

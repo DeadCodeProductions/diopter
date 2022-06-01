@@ -88,6 +88,8 @@ def is_write_from_xored_register(line: int, asm_lines: list[AsmLine]) -> bool:
     assert isinstance(instr, Instruction)
     if not prev_instr.name.startswith("xor"):
         return False
+    if not prev_instr.op1 == prev_instr.op2:
+        return False
     assert isinstance(prev_instr.op1, Register)
     assert isinstance(instr.op1, Register)
     return prev_instr.op1 == prev_instr.op2 and instr.op1 <= prev_instr.op1

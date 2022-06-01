@@ -68,6 +68,9 @@ class Reducer:
                 str(script_path.name),
                 str(code_file.name),
             ]
+            print(tmpdir)
+            while True:
+                pass
 
             try:
                 run_cmd_to_logfile(

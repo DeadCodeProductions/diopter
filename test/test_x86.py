@@ -95,7 +95,7 @@ d:
         .byte   0                               # 0x0
         """
     lines = parse_x86(asm2)
-    assert len(lines) == 7
+    assert len(lines) == 6
     assert lines[0] == Instruction(
         "leal",
         IndirectAddress(Register.from_str("%rsi"), index=Register.from_str("%rdi")),
@@ -106,7 +106,6 @@ d:
     assert lines[3] == Label(".LBB1_1")
     assert lines[4] == Instruction("jmp", Label(".LBB1_1"))
     assert lines[5] == Label("d")
-    assert lines[6] == Global(".byte", int(0))
     asm3 = """
 foo:                                    # @foo
         testl   %esi, %esi
@@ -161,7 +160,7 @@ a:
         .quad   .L.str
     """
     lines = parse_x86(asm4)
-    assert len(lines) == 7
+    assert len(lines) == 5
     assert lines[0] == Label("foo")
     assert lines[1] == Instruction(
         "movq",
@@ -170,6 +169,4 @@ a:
     )
     assert lines[2] == Instruction("retq")
     assert lines[3] == Label(".L.str")
-    assert lines[4] == Global(".asciz", "test")
-    assert lines[5] == Label("a")
-    assert lines[6] == Global(".quad", Label(".L.str"))
+    assert lines[4] == Label("a")
