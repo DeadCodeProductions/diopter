@@ -2,9 +2,17 @@ import os
 import subprocess
 import logging
 import tempfile
+from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Union, Optional, Any, TextIO, IO
 from types import TracebackType
+from tempfile import NamedTemporaryFile
+
+
+from elftools.elf.elffile import ELFFile
+from elftools.elf.relocation import RelocationSection
+from elftools.elf.sections import SymbolTableSection
 
 
 def run_cmd(
@@ -149,9 +157,75 @@ def get_asm_str(code: str, compiler: str, flags: list[str]) -> Optional[str]:
             return f.read()
 
 
+def get_tmp_object_file(
+    code: str, compiler: str, flags: list[str], is_asm=False
+) -> NamedTemporaryFile:
+
+    code_file = save_to_tmp_file(code, ".c" if not is_asm else ".s")
+    obj = NamedTemporaryFile(suffix=".o")
+    cmd = [compiler, code_file.name, "-c", "-o", obj.name]
+    if flags:
+        cmd.extend(flags.split(" "))
+    try:
+        run_cmd(cmd)
+    except subprocess.CalledProcessError:
+        raise CompileError(cmd)
+    return obj
+
+
 def save_to_tmp_file(content: str, suffix: Optional[str] = None) -> IO[bytes]:
     ntf = tempfile.NamedTemporaryFile(suffix=suffix)
     with open(ntf.name, "w") as f:
         f.write(content)
 
     return ntf
+
+
+@dataclass
+class ELFInfo:
+    text: BytesIO
+    symbol_offset_map: dict[int, str]
+
+
+def normalize_symbol_with_offset(g: str) -> str:
+    if "+" not in g:
+        return g
+    t1, t2 = g.split("+")
+    try:
+        int(t1)
+        return t1 + "+" + t2
+    except:
+        return t2 + "+" + t1
+
+
+def get_elf_info(file: str) -> ELFInfo:
+    with open(file, "rb") as f:
+        elffile = ELFFile(f)
+        assert elffile
+
+        symtab = elffile.get_section_by_name(".symtab")
+        assert isinstance(symtab, SymbolTableSection)
+
+        id_map = {i: symbol.name for i, symbol in enumerate(symtab.iter_symbols())}
+
+        relatext = elffile.get_section_by_name(".rela.text")
+        assert isinstance(relatext, RelocationSection)
+
+        symbol_offset_map = {}
+        symbol_addend_map = {}
+        for reloc in relatext.iter_relocations():
+            symbol_name = id_map[reloc["r_info_sym"]]
+            symbol_offset_map[reloc["r_offset"]] = symbol_name
+            symbol_addend_map[symbol_name] = reloc["r_addend"]
+
+        text_section = elffile.get_section_by_name(".text")
+        assert text_section
+
+        return ELFInfo(
+            text_section.data(),
+            {
+                o - symbol_addend_map[s]: normalize_symbol_with_offset(s)
+                for o, s in symbol_offset_map.items()
+                if s in symbol_addend_map
+            },
+        )
