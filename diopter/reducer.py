@@ -59,7 +59,7 @@ class Reducer:
             script_path = tmpdir / "check.py"
             with open(script_path, "w") as f:
                 print(interestingness_test, file=f)
-            os.chmod(script_path, 0o777)
+            os.chmod(script_path, 0o770)
             # run creduce
             creduce_cmd = [
                 self.creduce,
