@@ -25,8 +25,6 @@ def run_cmd(
         cmd, cwd=str(working_dir), check=True, env=env, capture_output=True, **kwargs
     )
 
-    logging.debug(output.stdout.decode("utf-8").strip())
-    logging.debug(output.stderr.decode("utf-8").strip())
     res: str = output.stdout.decode("utf-8").strip()
     return res
 
@@ -58,13 +56,20 @@ def run_cmd_to_logfile(
 
 
 class TempDirEnv:
-    def __init__(self) -> None:
+    def __init__(self, change_dir: bool = False) -> None:
         self.td: tempfile.TemporaryDirectory[str]
+        self.old_dir: Path
+
+        self.chdir = change_dir
 
     def __enter__(self) -> Path:
         self.td = tempfile.TemporaryDirectory()
         tempfile.tempdir = self.td.name
-        return Path(self.td.name)
+        tmpdir_path = Path(self.td.name)
+        if self.chdir:
+            self.old_dir = Path(os.getcwd()).absolute()
+            os.chdir(tmpdir_path)
+        return tmpdir_path
 
     def __exit__(
         self,
@@ -72,6 +77,8 @@ class TempDirEnv:
         exc_value: Optional[BaseException],
         exc_traceback: Optional[TracebackType],
     ) -> None:
+        if self.chdir:
+            os.chdir(self.old_dir)
         tempfile.tempdir = None
 
 
