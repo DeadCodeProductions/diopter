@@ -1,15 +1,21 @@
-import pickle
 import inspect
-import os
-import subprocess
 import logging
+import os
+import pickle
 import shutil
+import subprocess
+from multiprocessing import cpu_count
 from pathlib import Path
 from sys import stderr
-from typing import Callable, TextIO, Optional
-from multiprocessing import cpu_count
+from typing import Callable, Optional, TextIO, TypeVar
 
-from diopter.utils import run_cmd_to_logfile, TempDirEnv
+from diopter.database import BaseCase, Code
+from diopter.utils import TempDirEnv, run_cmd_to_logfile
+
+T = TypeVar("T", bound=BaseCase)
+P = TypeVar("P")
+
+Script = str
 
 
 class Reducer:
@@ -25,13 +31,30 @@ class Reducer:
         """
         self.creduce = creduce if creduce else "creduce"
 
+    def reduce_case(
+        self,
+        cse: T,
+        prepare: Callable[[T], P],
+        make_test: Callable[[P], Script],
+        jobs: Optional[int] = None,
+        log_file: Optional[TextIO] = None,
+    ) -> bool:
+
+        script = make_test(prepare(cse))
+        if res := self.reduce(cse.original.code, script, jobs, log_file):
+            cse.reduced = Code.make(res)
+            return True
+
+        return False
+
     def reduce(
         self,
         code: str,
-        interestingness_test: str,
+        interestingness_test: Script,
         jobs: Optional[int] = None,
         log_file: Optional[TextIO] = None,
     ) -> Optional[str]:
+        # TODO: Update docs
         """
         Reduce given code
 

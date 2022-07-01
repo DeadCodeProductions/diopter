@@ -1,12 +1,12 @@
-import subprocess
 import logging
-from random import randint
-from tempfile import NamedTemporaryFile
+import subprocess
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Optional, Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
+from pathlib import Path
+from random import randint
+from tempfile import NamedTemporaryFile
+from typing import Iterator, Optional
 
 from diopter.sanitizer import sanitize_code as sanitize
 
@@ -34,6 +34,7 @@ class Generator:
             logging.debug("Code not sanitizable")
 
 
+# TODO: A parallel generator makes (potentially) no sense for the CSmithGenerator as it's light work
 class ParallelGenerator:
     def __init__(self, generator: Generator):
         """Args:

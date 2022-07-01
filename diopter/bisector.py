@@ -1,63 +1,167 @@
 import logging
 import os
-
-from typing import Optional
-
-import ccbuilder
 import subprocess
-from diopter.utils import TempDirEnv, run_cmd_to_logfile, run_cmd
-from ccbuilder import (
-    PatchDB,
-    BuilderWithCache,
-    Repo,
-    Compiler,
-    BuildException,
-    CompilerConfig,
-)
 from pathlib import Path
+from typing import Callable, Optional, TypeVar
+
+from ccbuilder import (
+    Builder,
+    BuildException,
+    Commit,
+    CompilerProject,
+    Repo,
+    Revision,
+    find_cached_revisions,
+    get_repo,
+)
+
+from diopter.utils import TempDirEnv, run_cmd
+
+C = TypeVar("C")
 
 
 class BisectionException(Exception):
     pass
 
 
-def find_cached_revisions(compiler: Compiler, cache_prefix: Path) -> list[str]:
-
-    match compiler:
-        case Compiler.GCC:
-            compiler_name = "gcc"
-        case Compiler.LLVM:
-            compiler_name = "clang"
-
-    if compiler_name == "llvm":
-        compiler_name = "clang"
-    compilers = []
-
-    for entry in Path(cache_prefix).iterdir():
-        if entry.is_symlink() or not entry.stem.startswith(compiler_name):
-            continue
-        if not (entry / "bin" / compiler_name).exists():
-            continue
-        rev = str(entry).split("-")[-1]
-        compilers.append(rev)
-    return compilers
-
-
 class Bisector:
-    def __init__(self, bldr: BuilderWithCache):
+    def __init__(self, bldr: Builder):
         self.bldr = bldr
         return
+
+    def bisect_higherorder(
+        self,
+        cse: C,
+        test: Callable[[Commit, C, Builder], Optional[bool]],
+        bad_commit: Commit,
+        good_commit: Commit,
+        project: CompilerProject,
+        repo: Repo,
+    ) -> Optional[Commit]:
+        print("LETS GOO")
+        possible_commits = repo.direct_first_parent_path(good_commit, bad_commit)
+
+        cached_commits = find_cached_revisions(project, self.bldr.cache_prefix)
+        cached_commits = [r for r in cached_commits if r in possible_commits]
+
+        # Create enumeration dict to sort cached_commits with
+        sort_dict = dict((r, v) for v, r in enumerate(possible_commits))
+        cached_commits = sorted(cached_commits, key=lambda x: sort_dict[x])
+
+        # bisect in cache
+        len_region = len(possible_commits)
+        logging.info(f"Bisecting in cache...")
+        midpoint: Commit = ""
+        old_midpoint: Commit = ""
+        test_failed = False
+        while True:
+            if test_failed:
+                # TODO: Introduce failure management option
+                test_failed = False
+                cached_commits.remove(midpoint)
+
+            logging.info(
+                f"{len(cached_commits): 4}, bad: {bad_commit}, good: {good_commit}"
+            )
+            if len(cached_commits) == 0:
+                break
+            midpoint_idx = len(cached_commits) // 2
+            old_midpoint = midpoint
+            midpoint = cached_commits[midpoint_idx]
+            if old_midpoint == midpoint:
+                break
+
+            test_res: Optional[bool] = test(midpoint, cse, self.bldr)
+
+            match test_res:
+                case True:
+                    good_commit = midpoint
+                    cached_commits = cached_commits[:midpoint_idx]
+                case False:
+                    bad_commit = midpoint
+                    cached_commits = cached_commits[midpoint_idx + 1 :]
+                case None:
+                    test_failed = True
+
+        tmp_len_region = len(repo.direct_first_parent_path(good_commit, bad_commit))
+        logging.info(f"Cache bisection: range size {len_region} -> {tmp_len_region}")
+        len_region = tmp_len_region
+
+        midpoint = ""
+        old_midpoint = ""
+        failed_any_step = False
+        failed_any_step_counter = 0
+
+        guaranteed_termination_counter = 0
+        while True:
+            if not failed_any_step:
+                old_midpoint = midpoint
+                midpoint = repo.next_bisection_commit(good_commit, bad_commit)
+                failed_any_step_counter = 0
+                if midpoint == "" or midpoint == old_midpoint:
+                    break
+            else:
+                if failed_any_step_counter >= 3:  # TODO: make parameter for this
+                    raise BisectionException(
+                        "Failed too many times in a row while bisecting. Aborting bisection..."
+                    )
+                if failed_any_step_counter % 2 == 0:
+                    # Get size of range
+                    range_size = len(
+                        repo.direct_first_parent_path(midpoint, bad_commit)
+                    )
+
+                    # Move 10% towards the last bad
+                    step = max(int(0.9 * range_size), 1)
+                    midpoint = repo.rev_to_commit(f"{bad_commit}~{step}")
+                else:
+                    # Symmetric to case above but jumping 10% into the other directory i.e 20% from our position.
+                    range_size = len(
+                        repo.direct_first_parent_path(good_commit, midpoint)
+                    )
+                    step = max(int(0.2 * range_size), 1)
+                    midpoint = repo.rev_to_commit(f"{midpoint}~{step}")
+
+                failed_any_step_counter += 1
+                failed_any_step = False
+
+                if guaranteed_termination_counter >= 20:
+                    raise BisectionException(
+                        "Failed too many times in a row while bisecting. Aborting bisection..."
+                    )
+                guaranteed_termination_counter += 1
+
+            logging.info(f"Midpoint: {midpoint}")
+
+            try:
+                self.bldr.build(project, midpoint)
+            except BuildException:
+                logging.warning(f"Could not build {project.to_string()} {midpoint}!")
+                failed_any_step = True
+                continue
+
+            test_res = test(midpoint, cse, self.bldr)
+
+            match test_res:
+                case True:
+                    good_commit = midpoint
+                case False:
+                    bad_commit = midpoint
+                case None:
+                    test_failed = True
+        return bad_commit
 
     def bisect(
         self,
         code: str,
         interestingness_test: str,
-        compiler_project: ccbuilder.Compiler,
-        good_compiler_rev: str,
-        bad_compiler_rev: str,
+        project: CompilerProject,
+        good_compiler_rev: Revision,
+        bad_compiler_rev: Revision,
         compiler_repo_path: Path,
         inverse_test_result: bool = False,
-    ) -> Optional[str]:
+    ) -> Optional[Commit]:
+        # TODO Update docs
         """bisect.
 
         Args:
@@ -74,11 +178,7 @@ class Bisector:
             Optional[str]:
         """
 
-        compiler_config = ccbuilder.get_compiler_config(
-            compiler_project.to_string(), compiler_repo_path
-        )
-
-        repo = compiler_config.repo
+        repo = get_repo(project, compiler_repo_path)
 
         # sanitize revs
         good_rev = repo.rev_to_commit(good_compiler_rev)
@@ -97,8 +197,7 @@ class Bisector:
 
             try:
                 return self._bisection(
-                    compiler_project,
-                    compiler_config,
+                    project,
                     good_rev,
                     bad_rev,
                     repo,
@@ -118,17 +217,16 @@ class Bisector:
 
     def _bisection(
         self,
-        compiler: Compiler,
-        compiler_config: CompilerConfig,
+        project: CompilerProject,
         good_rev: str,
         bad_rev: str,
         repo: Repo,
         inverse_test_result: bool,
-    ) -> str:
+    ) -> Commit:
 
         possible_revs = repo.direct_first_parent_path(good_rev, bad_rev)
 
-        cached_revs = find_cached_revisions(compiler, self.bldr.cache_prefix)
+        cached_revs = find_cached_revisions(project, self.bldr.cache_prefix)
         cached_revs = [r for r in cached_revs if r in possible_revs]
 
         # Create enumeration dict to sort cached_revs with
@@ -138,8 +236,8 @@ class Bisector:
         # bisect in cache
         len_region = len(repo.direct_first_parent_path(good_rev, bad_rev))
         logging.info(f"Bisecting in cache...")
-        midpoint = ""
-        old_midpoint = ""
+        midpoint: Commit = ""
+        old_midpoint: Commit = ""
         failed_to_compile = False
         while True:
             if failed_to_compile:
@@ -155,7 +253,7 @@ class Bisector:
             if old_midpoint == midpoint:
                 break
 
-            midpoint_path = self.bldr.build_rev_with_config(compiler_config, midpoint)
+            midpoint_path = self.bldr.build(project, midpoint)
             test: bool = self._run_test(midpoint_path)
 
             if test:
@@ -225,12 +323,10 @@ class Bisector:
             logging.info(f"Midpoint: {midpoint}")
 
             try:
-                midpoint_path = self.bldr.build_rev_with_config(
-                    compiler_config, midpoint
-                )
+                midpoint_path = self.bldr.build(project, midpoint)
                 test = self._run_test(midpoint_path)
             except BuildException:
-                logging.warning(f"Could not build {compiler.to_string()} {midpoint}!")
+                logging.warning(f"Could not build {project.to_string()} {midpoint}!")
                 failed_to_build_or_compile = True
                 continue
 
