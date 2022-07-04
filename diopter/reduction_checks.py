@@ -1,9 +1,9 @@
 import inspect
-from typing import Callable
 from pathlib import Path
+from typing import Any, Callable
 
-from diopter.utils import get_asm_str
 from diopter.sanitizer import sanitize_file
+from diopter.utils import get_asm_str
 
 
 def emit_module_imports(
@@ -53,7 +53,7 @@ if not {sanitize_name}("gcc", "clang", "ccomp", "code.c", "{sanitize_flags}"):
     return prologue
 
 
-def emit_call(check: Callable[..., bool], **kwargs: str) -> str:
+def emit_call(check: Callable[..., bool], kwargs: dict[Any, Any]) -> str:
     if not kwargs:
         call = "exit(not " + check.__name__ + "(code))"
     else:
@@ -61,7 +61,7 @@ def emit_call(check: Callable[..., bool], **kwargs: str) -> str:
             "exit(not "
             + check.__name__
             + "(code, "
-            + ", ".join(f'{k} = "{v}"' for k, v in kwargs.items())
+            + ", ".join(f"{k} = {v}" for k, v in kwargs.items())
             + "))"
         )
     return f"""with open(\"code.c\", \"r\") as f:
@@ -71,7 +71,10 @@ def emit_call(check: Callable[..., bool], **kwargs: str) -> str:
 
 
 def make_interestingness_check(
-    check: Callable[..., bool], sanitize: bool, sanitize_flags: str, **kwargs: str
+    check: Callable[..., bool],
+    sanitize: bool,
+    sanitize_flags: str,
+    add_args: dict[Any, Any],
 ) -> str:
     """
     Helper function to create a script useful for use with diopter.Reducer
@@ -90,6 +93,6 @@ def make_interestingness_check(
         (
             prologue,
             emit_module_imports(check, sanitize, sanitize_flags),
-            emit_call(check, **kwargs),
+            emit_call(check, add_args),
         )
     )

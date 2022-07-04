@@ -4,6 +4,7 @@ from diopter import (
     generator,
     preprocessor,
     reducer,
+    reduction_checks,
     sanitizer,
     utils,
 )
@@ -16,4 +17,5 @@ __all__ = [
     "sanitizer",
     "utils",
     "database",
+    "reduction_checks",
 ]
