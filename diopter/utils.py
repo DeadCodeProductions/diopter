@@ -1,10 +1,15 @@
+import copy
+import logging
 import os
 import subprocess
-import logging
 import tempfile
 from pathlib import Path
-from typing import Union, Optional, Any, TextIO, IO
 from types import TracebackType
+from typing import IO, Any, Optional, TextIO, Union
+
+import ccbuilder
+
+import diopter
 
 
 def run_cmd(
@@ -162,3 +167,27 @@ def save_to_tmp_file(content: str, suffix: Optional[str] = None) -> IO[bytes]:
         f.write(content)
 
     return ntf
+
+
+def create_compiler_settings(
+    project: ccbuilder.CompilerProject,
+    revs: list[ccbuilder.Revision],
+    opt_levels: list[str],
+    additional_flags: list[diopter.database.HashableStringList],
+    repo: ccbuilder.Repo,
+) -> list[diopter.database.CompilerSetting]:
+
+    res: list[diopter.database.CompilerSetting] = []
+    for rev in revs:
+        commit = repo.rev_to_commit(rev)
+        for opt in opt_levels:
+            for add_flag in additional_flags:
+                cpy = copy.deepcopy(add_flag)
+                t = diopter.database.CompilerSetting(
+                    compiler_name=project.to_string(),
+                    rev=commit,
+                    opt_level=opt,
+                    additional_flags=cpy,
+                )
+                res.append(t)
+    return res
