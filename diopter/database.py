@@ -131,30 +131,3 @@ class CompilerSetting(Base):
             opt_level=cleared_opt_level,
             additional_flags=cleared_additional_flags,
         )
-
-
-class BaseCase(Base):
-
-    __tablename__ = "cases"
-    id = Column(
-        Integer(),
-        sqlalchemy.Sequence("case_id_seq"),
-        primary_key=True,
-    )
-
-    type = Column(String(20))
-
-    bisection = Column(String(40))
-
-    code_id = Column(String(40), ForeignKey("code.id"), nullable=False)
-    original: Mapped[Code] = relationship("Code", foreign_keys="BaseCase.code_id")
-
-    reduced_id = Column(String(40), ForeignKey("code.id"))
-    reduced: Mapped[Optional[Code]] = relationship(
-        "Code", foreign_keys="BaseCase.reduced_id"
-    )
-
-    __mapper_args__ = {
-        "polymorphic_on": type,
-        "polymorphic_identity": "basecase",
-    }
