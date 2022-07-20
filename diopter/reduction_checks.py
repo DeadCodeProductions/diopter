@@ -2,16 +2,12 @@ import inspect
 from pathlib import Path
 from typing import Any, Callable
 
-from diopter.sanitizer import sanitize_file
-from diopter.utils import get_asm_str
-
 
 def emit_module_imports(
     check: Callable[..., bool], sanitize: bool, sanitize_flags: str
 ) -> str:
     this_source_file = inspect.getsourcefile(emit_module_imports)
     assert this_source_file
-    diopter_init = str(Path(this_source_file).parent / "__init__.py")
 
     check_name = check.__name__
     check_module_path = inspect.getsourcefile(check)
@@ -20,33 +16,16 @@ def emit_module_imports(
 
     prologue = f"""import importlib
 import sys
-
-spec = importlib.util.spec_from_file_location("diopter", "{diopter_init}")
-module = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
-
-spec = importlib.util.spec_from_file_location("{check_module}", "{check_module_path}")
-module = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
+from pathlib import Path
+sys.path.insert(0, "{str(Path(check_module_path).parent)}")
 
 from {check_module} import {check_name}
 """
     if sanitize:
-        sanitize_name = sanitize_file.__name__
-        sanitize_module_path = inspect.getsourcefile(sanitize_file)
-        assert sanitize_module_path
-        sanitize_module = inspect.getmodulename(sanitize_module_path)
         prologue += f"""
-spec = importlib.util.spec_from_file_location("{sanitize_module}", "{sanitize_module_path}")
-module = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = module
-spec.loader.exec_module(module)
+from diopter.sanitizer import sanitize_file
 
-from {sanitize_module} import {sanitize_name}
-
-if not {sanitize_name}("gcc", "clang", "ccomp", "code.c", "{sanitize_flags}"):
+if not sanitize_file("gcc", "clang", "ccomp", "code.c", "{sanitize_flags}"):
     exit(1)
 
 """
