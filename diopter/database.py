@@ -103,9 +103,7 @@ class CompilerSetting(Base):
     )
 
     def __repr__(self) -> str:
-        return (
-            f"{self.compiler_name} {self.rev} {self.opt_level} {self.additional_flags}"
-        )
+        return f"CSetting({self.compiler_name} {self.rev} {self.opt_level} {self.additional_flags})"
 
     def get_flag_string(self) -> str:
         return f"-O{self.opt_level} " + " ".join(self.additional_flags)
