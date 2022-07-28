@@ -76,9 +76,9 @@ class CompressedStringList(types.TypeDecorator[HashableStringList]):
         return HashableStringList(res.split("||"))
 
 
-# class _Sequence(Base):
-#    __tablename__ = "sequence"
-#    key = Column(Integer(), primary_key=True)
+class _Sequence(Base):
+    __tablename__ = "sequence"
+    key = Column(Integer(), primary_key=True)
 
 
 class Code(Base):
@@ -100,12 +100,12 @@ class Code(Base):
 Trigger = sqlalchemy.DDL(
     """
 CREATE TRIGGER IF NOT EXISTS auto_increment_trigger
-INSTEAD OF INSERT ON compiler_setting
+AFTER INSERT ON compiler_setting
 WHEN new.id IS NULL
 BEGIN
     INSERT INTO sequence VALUES (NULL);
     UPDATE compiler_setting 
-    SET id = (SELECT MAX(id) FROM sequence)
+    SET id = (SELECT MAX(key) FROM sequence)
     WHERE 
     compiler_name = new.compiler_name AND
     rev == new.rev AND
@@ -119,10 +119,10 @@ END;
 class CompilerSetting(Base):
     __tablename__ = "compiler_setting"
 
-    id = Column(
-        Integer(), sqlalchemy.Sequence("compiler_id_seq"), unique=True
-    )  # DuckDB
-    # id = Column(Integer(), unique=True) # Trigger
+    # id = Column(
+    #    Integer(), sqlalchemy.Sequence("compiler_id_seq"), unique=True
+    # )  # DuckDB
+    id = Column(Integer(), unique=True)  # Trigger
     # id = Column(Integer(), server_default=(sqlalchemy.sql.functions.max(_Sequence.key)+1), unique=True)
     # id = Column(BigInteger().with_variant(Integer, "sqlite"), autoincrement=True, unique=True)
     compiler_name: Mapped[str] = Column(String(10), primary_key=True)
