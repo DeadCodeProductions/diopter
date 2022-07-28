@@ -39,8 +39,7 @@ class CompilerInvocation:
         with TempDirEnv(change_dir=True) as tdir:
             with save_to_tmp_file(self.code, ".c") as code_file:
                 cmd = (
-                    f"{self.compiler_binary} -c -o /dev/null {code_file.name}".split()
-                    + self.flags
+                    f"{self.compiler_binary} -c  {code_file.name}".split() + self.flags
                 )
                 try:
                     # print(" ".join(cmd))

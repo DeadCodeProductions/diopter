@@ -31,7 +31,7 @@ def find_range_table_begin_locs(gimple_vrp: str) -> list[int]:
     return [
         lineno
         for lineno, line in enumerate(gimple_vrp.splitlines())
-        if "Exported global range table:" in line
+        if "Exported global range table:" in line or "Value ranges after" in line
     ]
 
 
@@ -40,11 +40,16 @@ def search_value_range(
 ) -> Optional[Range]:
     for line in gimple_lines[begin_loc:end_loc]:
         line = line.strip()
+        if "VARYING" in line:
+            continue
+        line = line.replace("EQUIVALENCES", "")
+        if "*" in line:
+            continue
         if line.startswith(var):
             if line.split(":")[0].strip() != var:
                 continue
             line = line.split(":")[1].strip()
-            assert line[-1] == "]"
+            assert line[-1] == "]", line
             line = line[:-1]
             type_, range_ = line.split("[")
             type_ = type_.strip()
@@ -58,15 +63,23 @@ def search_value_range(
             if ub.strip() == "+INF":
                 ub = str(2 ** 64)
             if lb.strip() == "-INF":
-                ub = str(-(2 ** 64))
+                lb = str(-(2 ** 64))
             if lb.strip() == "1B":
                 lb = 1
+            if type_ == "int32_t":
+                type_ = "int"
+            if type_ == "uint32_t":
+                type_ = "unsigned int"
+            if type_ == "uint64_t":
+                type_ = "long unsigned int"
+
             try:
                 return Range(int(lb), int(ub), type_, inverse)
-            except:
-                print(line)
-                print(f"{lb}, {ub} {type_}")
-                exit(1)
+            except Exception as e:
+                # print(e)
+                # print(line)
+                # print(f"{lb}, {ub} {type_}")
+                return None
 
 
 def extract_value_ranges(

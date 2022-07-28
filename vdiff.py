@@ -28,20 +28,28 @@ def get_value_ranges(code, compiler, opt_level):
         compiler,
         instrumented_code,
         [opt_level, "-isystem/usr/include/csmith-2.3.0", "-fdump-tree-evrp-alias"],
-    ).capture_output_from_generated_file(".040t.evrp")
+    ).capture_output_from_generated_file(".evrp")
     return read_value_ranges(vrange_output)
 
 
 while True:
     print("Trying new case")
     code = CSmithGenerator().generate_code()
-    O2_vr = get_value_ranges(code, "gcc", "-O2")
-    O3_vr = get_value_ranges(code, "gcc", "-O3")
+    g11_vr = get_value_ranges(code, "/zdata/compiler_cache/gcc-releases-gcc-11.1.0/bin/gcc", "-O3")
+    g12_vr = get_value_ranges(code, "/zdata/compiler_cache/gcc-6f14b4e385d0b2221557faf40fb24eacf22ca7f8/bin/gcc", "-O3")
+    print(f"11 tags: {len(g11_vr)}")
+    print(f"12 tags: {len(g12_vr)}")
+    print(f"common:  {len(g12_vr.keys() & g11_vr.keys())}")
 
-    for tag in O2_vr.keys() & O3_vr.keys():
-        tag_vr_O2 = O2_vr[tag]
-        tag_vr_O3 = O3_vr[tag]
-        if tag_vr_O2 != tag_vr_O3:
+    for tag in g11_vr.keys() & g12_vr.keys():
+        tag_vr_g11 = g11_vr[tag]
+        tag_vr_g12 = g12_vr[tag]
+        if tag_vr_g11 != tag_vr_g12:
             print(tag)
-            print(f"O2: {tag_vr_O2}")
-            print(f"O3: {tag_vr_O3}")
+            print(f"G11: {tag_vr_g11}")
+            print(f"G12: {tag_vr_g12}")
+
+# 
+# /zdata/compiler_cache/gcc-releases-gcc-10.3.0/bin/gcc
+
+#   
