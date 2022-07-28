@@ -7,8 +7,9 @@ from typing import Any, Optional
 
 import sqlalchemy
 import sqlalchemy.types as types
-from sqlalchemy import Column, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Column, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, declarative_base, relationship
+from sqlalchemy.schema import FetchedValue
 
 Base = declarative_base()
 
@@ -24,6 +25,7 @@ def decompress(s: bytes) -> str:
 class CompressedString(types.TypeDecorator[str]):
 
     impl = types.BLOB
+    # cache_ok = True
 
     def process_bind_param(self, value: Optional[str], dialect: Any) -> Optional[bytes]:
         if value is None:
@@ -56,7 +58,6 @@ class CompressedStringList(types.TypeDecorator[HashableStringList]):
 
     impl = types.BLOB
 
-    # duckdb-engine does not support caching
     # cache_ok = True
 
     def process_bind_param(
@@ -75,6 +76,11 @@ class CompressedStringList(types.TypeDecorator[HashableStringList]):
         return HashableStringList(res.split("||"))
 
 
+# class _Sequence(Base):
+#    __tablename__ = "sequence"
+#    key = Column(Integer(), primary_key=True)
+
+
 class Code(Base):
     __tablename__ = "code"
 
@@ -91,10 +97,34 @@ class Code(Base):
         return Code(id=code_sha1, code=code)
 
 
+Trigger = sqlalchemy.DDL(
+    """
+CREATE TRIGGER IF NOT EXISTS auto_increment_trigger
+INSTEAD OF INSERT ON compiler_setting
+WHEN new.id IS NULL
+BEGIN
+    INSERT INTO sequence VALUES (NULL);
+    UPDATE compiler_setting 
+    SET id = (SELECT MAX(id) FROM sequence)
+    WHERE 
+    compiler_name = new.compiler_name AND
+    rev == new.rev AND
+    opt_level == new.opt_level AND
+    additional_flags == new.additional_flags;
+END;
+"""
+)
+
+
 class CompilerSetting(Base):
     __tablename__ = "compiler_setting"
 
-    id = Column(Integer(), sqlalchemy.Sequence("compiler_id_seq"), unique=True)
+    id = Column(
+        Integer(), sqlalchemy.Sequence("compiler_id_seq"), unique=True
+    )  # DuckDB
+    # id = Column(Integer(), unique=True) # Trigger
+    # id = Column(Integer(), server_default=(sqlalchemy.sql.functions.max(_Sequence.key)+1), unique=True)
+    # id = Column(BigInteger().with_variant(Integer, "sqlite"), autoincrement=True, unique=True)
     compiler_name: Mapped[str] = Column(String(10), primary_key=True)
     rev: Mapped[str] = Column(String(40), primary_key=True)
     opt_level: Mapped[str] = Column(String(1), primary_key=True)
