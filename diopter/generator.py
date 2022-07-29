@@ -1,7 +1,7 @@
 import logging
 import subprocess
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, Executor
 from multiprocessing import cpu_count
 from pathlib import Path
 from random import randint
@@ -29,16 +29,24 @@ class Generator:
             logging.debug("Code didn't pass the filter")
 
     def generate_code_parallel(
-        self, n: int, jobs: Optional[int] = None
+        self, n: int, e: Optional[Executor] = None, jobs: Optional[int] = None
     ) -> Iterator[str]:
         """Args:
         n: how many cases to generate
-        jobs: the number of concurrent jobs, if none cpu_count() will be used
+        e: the executor used for running the code generation jobs
+        jobs: the number of concurrent jobs, if none cpu_count() will be used (ignored if e is not None)
         """
-        with ProcessPoolExecutor(jobs if jobs else cpu_count()) as p:
-            futures = (p.submit(self.generate_code) for _ in range(n))
+
+        def make_futures(e: Executor) -> Iterator[str]:
+            futures = (e.submit(self.generate_code) for _ in range(n))
             for future in as_completed(futures):
                 yield future.result()
+
+        if e:
+            yield from make_futures(e)
+        else:
+            with ProcessPoolExecutor(jobs if jobs else cpu_count()) as p:
+                yield from make_futures(p)
 
 
 class CSmithGenerator(Generator):
