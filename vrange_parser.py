@@ -1,3 +1,4 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from bisect import bisect
 from typing import Optional
@@ -65,9 +66,11 @@ def search_value_range(
             if lb.strip() == "-INF":
                 lb = str(-(2 ** 64))
             if lb.strip() == "1B":
-                lb = 1
+                lb = str(1)
             if type_ == "int32_t":
                 type_ = "int"
+            if type_ == "int64_t":
+                type_ = "long int"
             if type_ == "uint32_t":
                 type_ = "unsigned int"
             if type_ == "uint64_t":
@@ -80,6 +83,7 @@ def search_value_range(
                 # print(line)
                 # print(f"{lb}, {ub} {type_}")
                 return None
+    return None
 
 
 def extract_value_ranges(
