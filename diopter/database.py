@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 import sqlalchemy
 import sqlalchemy.types as types
-from sqlalchemy import BigInteger, Column, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Column, ForeignKey, Integer, String, event, select
 from sqlalchemy.orm import Mapped, declarative_base, relationship
 from sqlalchemy.schema import FetchedValue
 
@@ -25,7 +25,7 @@ def decompress(s: bytes) -> str:
 class CompressedString(types.TypeDecorator[str]):
 
     impl = types.BLOB
-    # cache_ok = True
+    cache_ok = True
 
     def process_bind_param(self, value: Optional[str], dialect: Any) -> Optional[bytes]:
         if value is None:
@@ -58,7 +58,7 @@ class CompressedStringList(types.TypeDecorator[HashableStringList]):
 
     impl = types.BLOB
 
-    # cache_ok = True
+    cache_ok = True
 
     def process_bind_param(
         self, value: Optional[HashableStringList], dialect: Any
@@ -76,7 +76,7 @@ class CompressedStringList(types.TypeDecorator[HashableStringList]):
         return HashableStringList(res.split("||"))
 
 
-class _Sequence(Base):
+class Sequence(Base):
     __tablename__ = "sequence"
     key = Column(Integer(), primary_key=True)
 
@@ -97,32 +97,18 @@ class Code(Base):
         return Code(id=code_sha1, code=code)
 
 
-Trigger = sqlalchemy.DDL(
-    """
-CREATE TRIGGER IF NOT EXISTS auto_increment_trigger
-AFTER INSERT ON compiler_setting
-WHEN new.id IS NULL
-BEGIN
-    INSERT INTO sequence VALUES (NULL);
-    UPDATE compiler_setting 
-    SET id = (SELECT MAX(key) FROM sequence)
-    WHERE 
-    compiler_name = new.compiler_name AND
-    rev == new.rev AND
-    opt_level == new.opt_level AND
-    additional_flags == new.additional_flags;
-END;
-"""
-)
-
-
 class CompilerSetting(Base):
     __tablename__ = "compiler_setting"
 
     # id = Column(
     #    Integer(), sqlalchemy.Sequence("compiler_id_seq"), unique=True
     # )  # DuckDB
-    id = Column(Integer(), unique=True)  # Trigger
+    id = Column(
+        Integer(),
+        nullable=False,
+        unique=True,
+        default=select(sqlalchemy.sql.functions.max(Sequence.key)),
+    )  # Trigger
     # id = Column(Integer(), server_default=(sqlalchemy.sql.functions.max(_Sequence.key)+1), unique=True)
     # id = Column(BigInteger().with_variant(Integer, "sqlite"), autoincrement=True, unique=True)
     compiler_name: Mapped[str] = Column(String(10), primary_key=True)
@@ -159,3 +145,33 @@ class CompilerSetting(Base):
             opt_level=cleared_opt_level,
             additional_flags=cleared_additional_flags,
         )
+
+
+def create_autoincrement_trigger_for(table_name: str) -> sqlalchemy.DDL:
+    return sqlalchemy.DDL(
+        f"""
+CREATE TRIGGER IF NOT EXISTS auto_increment_trigger_{table_name}
+BEFORE INSERT ON {table_name}
+BEGIN
+    INSERT INTO sequence VALUES (NULL);
+END;
+    """
+    )
+
+
+def prepare_base_before_creation() -> None:
+    event.listen(
+        Base.metadata,
+        "after_create",
+        create_autoincrement_trigger_for("compiler_setting"),
+    )
+    # Assume you have a tigger running BEFORE INSERT.
+    # When running a query like INSERT INTO ... VALUES ((SELECT MAX(key) from sequence), ...)
+    # then the SELECT MAX will be executed before the BEFORE-Trigger, thus yielding NULL in the very first
+    # execution of such a query.
+    # Basically the BEFORE-Trigger doesn't do a pre-increment but a post-increment.
+    event.listen(
+        Base.metadata,
+        "after_create",
+        sqlalchemy.DDL("INSERT INTO sequence VALUES (NULL);"),
+    )
