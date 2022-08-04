@@ -1,12 +1,12 @@
 import logging
 import subprocess
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor, as_completed, Executor
+from concurrent.futures import ProcessPoolExecutor, as_completed, Executor, Future
 from multiprocessing import cpu_count
 from pathlib import Path
 from random import randint
 from tempfile import NamedTemporaryFile
-from typing import Iterator, Optional
+from typing import Iterator, Optional, Union
 
 from diopter.sanitizer import sanitize_code as sanitize
 
@@ -30,21 +30,23 @@ class Generator:
 
     def generate_code_parallel(
         self, n: int, e: Optional[Executor] = None, jobs: Optional[int] = None
-    ) -> Iterator[str]:
+    ) -> Union[Iterator[str], Iterator[Future[str]]]:
         """Args:
         n: how many cases to generate
         jobs: the number of concurrent jobs, if none cpu_count() will be used
+
+        Return:
+            if e is None: an iterator of candidate strings
+            else:         an iterator of the futures
         """
 
-        def make_futures(e: Executor) -> Iterator[str]:
-            futures = (e.submit(self.generate_code) for _ in range(n))
-            for future in as_completed(futures):
-                yield future.result()
         if e:
-            yield from make_futures(e)
+            return (e.submit(self.generate_code) for _ in range(n))
         else:
             with ProcessPoolExecutor(jobs if jobs else cpu_count()) as p:
-                yield from make_futures(p)
+                futures = (p.submit(self.generate_code) for _ in range(n))
+                for future in as_completed(futures):
+                    yield future.result()
 
 
 class CSmithGenerator(Generator):
