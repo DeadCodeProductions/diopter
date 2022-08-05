@@ -2,10 +2,10 @@ import inspect
 from pathlib import Path
 from typing import Any, Callable
 
+# TODO: rename this file as this not only meant for reductions
 
-def emit_module_imports(
-    check: Callable[..., bool], sanitize: bool, sanitize_flags: str
-) -> str:
+
+def emit_module_imports(check: Callable[..., bool]) -> str:
     this_source_file = inspect.getsourcefile(emit_module_imports)
     assert this_source_file
 
@@ -20,14 +20,6 @@ from pathlib import Path
 sys.path.insert(0, "{str(Path(check_module_path).parent)}")
 
 from {check_module} import {check_name}
-"""
-    if sanitize:
-        prologue += f"""
-from diopter.sanitizer import sanitize_file
-
-if not sanitize_file("gcc", "clang", "ccomp", "code.c", "{sanitize_flags}"):
-    exit(1)
-
 """
     return prologue
 
@@ -51,8 +43,6 @@ def emit_call(check: Callable[..., bool], kwargs: dict[Any, Any]) -> str:
 
 def make_interestingness_check(
     check: Callable[..., bool],
-    sanitize: bool,
-    sanitize_flags: str,
     add_args: dict[Any, Any],
 ) -> str:
     """
@@ -61,7 +51,7 @@ def make_interestingness_check(
     Args:
         check: a Python function that implements the check, its first argument
         should be the code (str) to test.
-        kwargs: additional arguments passed to the check, these hardcoded in
+        add_args: additional arguments passed to the check, these hardcoded in
         the script
 
     Returns:
@@ -71,7 +61,7 @@ def make_interestingness_check(
     return "\n".join(
         (
             prologue,
-            emit_module_imports(check, sanitize, sanitize_flags),
+            emit_module_imports(check),
             emit_call(check, add_args),
         )
     )
