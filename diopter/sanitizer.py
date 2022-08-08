@@ -149,7 +149,7 @@ def verify_with_ccomp(
             "-fall",
         ]
         if flags:
-            cmd.extend(flags.split())
+            cmd.extend(flags.replace("isystem", "I").split())
         res = True
         try:
             run_cmd(
@@ -158,7 +158,10 @@ def verify_with_ccomp(
                 timeout=compcert_timeout,
             )
             res = True
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as e:
+            if e.stderr:
+                output = e.stderr.decode("utf-8").strip()
+                logging.debug(f"CComp failed with {output}")
             res = False
         except subprocess.TimeoutExpired:
             res = False
