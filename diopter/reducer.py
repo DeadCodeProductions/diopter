@@ -4,12 +4,72 @@ import os
 import subprocess
 import logging
 import shutil
+from abc import ABC, abstractmethod
 from pathlib import Path
 from sys import stderr
 from typing import Callable, TextIO, Optional
 from multiprocessing import cpu_count
 
 from diopter.utils import run_cmd_to_logfile, TempDirEnv
+
+
+class ReductionCallback(ABC):
+    @abstractmethod
+    def test(self, code: str) -> bool:
+        pass
+
+
+def emit_module_imports(reduction_callback: ReductionCallback) -> str:
+    callback_name = type(reduction_callback).__name__
+    callback_module_path = inspect.getsourcefile(type(reduction_callback))
+    assert callback_module_path
+    callback_module = inspect.getmodulename(callback_module_path)
+
+    return f"""import importlib
+import pickle
+import sys
+from pathlib import Path
+sys.path.insert(0, "{str(Path(callback_module_path).parent)}")
+
+from {callback_module} import {callback_name}
+"""
+
+
+def emit_call(reduction_callback: ReductionCallback, code_filename: str) -> str:
+    callback_in_hex = pickle.dumps(reduction_callback).hex()
+    callback_load = f'callback = pickle.loads(bytes.fromhex("{callback_in_hex}"))'
+
+    call = "exit(not callback.test(code))"
+    return f"""with open(\"{code_filename}\", \"r\") as f:
+    code = f.read()
+{callback_load}
+{call}
+    """
+
+
+def make_interestingness_script(
+    reduction_callback: ReductionCallback, code_filename: str
+) -> str:
+    """
+    Helper function to create a script useful for use with diopter.Reducer.
+    It serializes the reduction callback into a script that checks if the code in
+    code_filename is still interesting
+
+    Args:
+        reduction_callback: the callback that will be serialized stored as a runnable script
+        code_filename: the file that the generated script will check everytime it is run
+
+    Returns:
+        The python3 script (str)
+    """
+    prologue = "#!/usr/bin/env python3"
+    return "\n".join(
+        (
+            prologue,
+            emit_module_imports(reduction_callback),
+            emit_call(reduction_callback, code_filename),
+        )
+    )
 
 
 class Reducer:
@@ -28,7 +88,7 @@ class Reducer:
     def reduce(
         self,
         code: str,
-        interestingness_test: str,
+        interestingness_test: ReductionCallback,
         jobs: Optional[int] = None,
         log_file: Optional[TextIO] = None,
     ) -> Optional[str]:
@@ -37,7 +97,7 @@ class Reducer:
 
         Args:
             code: the code to reduce
-            interestingness_test: the interestingness test script (can be generated with make_interestingness_check)
+            interestingness_test: a concrete ReductionCallback that implementes the interestingness (can be generated with make_interestingness_check)
             jobs: The number of Creduce jobs, if empty cpu_count() will be
             log_file: Where to log Creduce's output, if empty stderr will be used
 
@@ -45,6 +105,10 @@ class Reducer:
             Reduced code, if successful.
         """
         creduce_jobs = jobs if jobs else cpu_count()
+
+        interestingness_script = make_interestingness_script(
+            interestingness_test, "code.c"
+        )
 
         # creduce likes to kill unfinished processes with SIGKILL
         # so they can't clean up after themselves.
@@ -58,7 +122,7 @@ class Reducer:
 
             script_path = tmpdir / "check.py"
             with open(script_path, "w") as f:
-                print(interestingness_test, file=f)
+                print(interestingness_script, file=f)
             os.chmod(script_path, 0o770)
             # run creduce
             creduce_cmd = [
