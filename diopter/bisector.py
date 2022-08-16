@@ -3,41 +3,21 @@ import math
 from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
-from ccbuilder import Builder, BuildException, Commit, CompilerProject, Repo, Revision
+from ccbuilder import (
+    Builder,
+    BuildException,
+    Commit,
+    CompilerProject,
+    Repo,
+    Revision,
+    find_cached_revisions,
+)
 
 S = TypeVar("S")
 
 
 class BisectionException(Exception):
     pass
-
-
-def find_cached_revisions(project: CompilerProject, cache_prefix: Path) -> list[Commit]:
-    """Find and return all cached revisions of `project` in `cache_prefix`.
-
-    Args:
-        project (CompilerProject): Which projects cached revisions to get.
-        cache_prefix (Path): Path to the compiler cache.
-
-    Returns:
-        list[Commit]: List of all cached revisions for `project`.
-    """
-    match project:
-        case CompilerProject.GCC:
-            compiler_name = "gcc"
-        case CompilerProject.LLVM:
-            compiler_name = "clang"
-
-    compilers: list[Commit] = []
-
-    for entry in Path(cache_prefix).iterdir():
-        if entry.is_symlink() or not entry.stem.startswith(compiler_name):
-            continue
-        if not (entry / "bin" / compiler_name).exists():
-            continue
-        rev: Commit = str(entry).split("-")[-1]
-        compilers.append(rev)
-    return compilers
 
 
 def find_sorted_cached_commits_from_range(
