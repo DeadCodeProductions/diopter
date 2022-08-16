@@ -93,8 +93,8 @@ class BisectionCallback(ABC):
 
 
 class Bisector:
-    def __init__(self, bldr: Builder):
-        self.bldr = bldr
+    def __init__(self, build_cache_prefix: Path):
+        self.build_cache_prefix = build_cache_prefix
         return
 
     def bisect(
@@ -180,7 +180,7 @@ class Bisector:
     ) -> tuple[Commit, Commit]:
 
         cached_commits = find_sorted_cached_commits_from_range(
-            good_commit, bad_commit, project, repo, self.bldr.cache_prefix
+            good_commit, bad_commit, project, repo, self.build_cache_prefix
         )
 
         logging.info(f"Bisecting in cache...")
@@ -251,17 +251,7 @@ class Bisector:
 
             logging.info(f"Midpoint: {midpoint}")
 
-            try:
-                _ = self.bldr.build(project, midpoint)
-                test_res: Optional[bool] = test.check(midpoint)
-            except BuildException as e:
-                logging.warning(
-                    f"Could not build {project.to_string()} {midpoint}!: {e}"
-                )
-                test_failed = True
-                continue
-
-            match test_res:
+            match test.check(midpoint):
                 case True:
                     bad_commit = midpoint
                 case False:
