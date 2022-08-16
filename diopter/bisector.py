@@ -1,7 +1,8 @@
 import logging
 import math
 from pathlib import Path
-from typing import Callable, Optional, TypeVar
+from typing import Optional
+from abc import ABC, abstractmethod
 
 from ccbuilder import (
     Builder,
@@ -12,8 +13,6 @@ from ccbuilder import (
     Revision,
     find_cached_revisions,
 )
-
-S = TypeVar("S")
 
 
 class BisectionException(Exception):
@@ -87,6 +86,12 @@ def _terminate(guaranteed_termination_counter: int) -> bool:
     return False
 
 
+class BisectionCallback(ABC):
+    @abstractmethod
+    def check(self, commit: Commit) -> Optional[bool]:
+        pass
+
+
 class Bisector:
     def __init__(self, bldr: Builder):
         self.bldr = bldr
@@ -94,21 +99,19 @@ class Bisector:
 
     def bisect(
         self,
-        state: S,
-        test: Callable[[Commit, S, Builder], Optional[bool]],
+        test: BisectionCallback,
         bad_rev: Revision,
         good_rev: Revision,
         project: CompilerProject,
         repo: Repo,
     ) -> Optional[Commit]:
-        """Bisect between `bad_rev` and `good_rev` based on the provided `test` function.
-        `test(bad_rev, state, bldr)` must be True.
-        `test(good_rev, state, bldr)` must be False.
+        """Bisect between `bad_rev` and `good_rev` based on the provided `test` callback.
+        `test(bad_rev)` must be True.
+        `test(good_rev)` must be False.
 
         Args:
             self:
-            state (S): Some kind of state that is required to run the `test`.
-            test (Callable[[Commit, S, Builder], Optional[bool]]): Interestingness test>
+            test (BisectionCallback): Interestingness test.
             bad_rev (Revision): Revision that shows the initial unwanted behaviour, defined in `test`.
             good_rev (Revision): Revision that shows the initial correct behaviour.
             project (CompilerProject): Which project on bisect in.
@@ -127,7 +130,7 @@ class Bisector:
         # 'land on top', we abort.
         if not repo.is_ancestor(good_commit, bad_commit):
             bca = repo.get_best_common_ancestor(good_commit, bad_commit)
-            test_res: Optional[bool] = test(bca, state, self.bldr)
+            test_res: Optional[bool] = test.check(bca)
             match test_res:
                 case False:
                     good_commit = bca
@@ -140,7 +143,6 @@ class Bisector:
 
         try:
             good_commit, bad_commit = self._in_cache_path_bisection(
-                state=state,
                 test=test,
                 bad_commit=bad_commit,
                 good_commit=good_commit,
@@ -149,7 +151,6 @@ class Bisector:
             )
             logging.info(f"{good_commit=} {bad_commit=}")
             if bisection_commit := self._normal_path_bisection(
-                state=state,
                 test=test,
                 bad_commit=bad_commit,
                 good_commit=good_commit,
@@ -158,8 +159,8 @@ class Bisector:
             ):
                 # Check if the result is correct
                 pre_bisection_commit = repo.rev_to_commit(f"{bisection_commit}~")
-                bisection_res = test(bisection_commit, state, self.bldr)
-                pre_bisection_res = test(pre_bisection_commit, state, self.bldr)
+                bisection_res = test.check(bisection_commit)
+                pre_bisection_res = test.check(pre_bisection_commit)
                 if (bisection_res == True) and (pre_bisection_res == False):
                     return bisection_commit
                 logging.warning("Bisection check failed!")
@@ -171,8 +172,7 @@ class Bisector:
 
     def _in_cache_path_bisection(
         self,
-        state: S,
-        test: Callable[[Commit, S, Builder], Optional[bool]],
+        test: BisectionCallback,
         bad_commit: Commit,
         good_commit: Commit,
         project: CompilerProject,
@@ -198,7 +198,7 @@ class Bisector:
             if old_midpoint == midpoint:
                 break
 
-            test_res: Optional[bool] = test(midpoint, state, self.bldr)
+            test_res: Optional[bool] = test.check(midpoint)
 
             match test_res:
                 case True:
@@ -215,8 +215,7 @@ class Bisector:
 
     def _normal_path_bisection(
         self,
-        state: S,
-        test: Callable[[Commit, S, Builder], Optional[bool]],
+        test: BisectionCallback,
         bad_commit: Commit,
         good_commit: Commit,
         project: CompilerProject,
@@ -254,7 +253,7 @@ class Bisector:
 
             try:
                 _ = self.bldr.build(project, midpoint)
-                test_res: Optional[bool] = test(midpoint, state, self.bldr)
+                test_res: Optional[bool] = test.check(midpoint)
             except BuildException as e:
                 logging.warning(
                     f"Could not build {project.to_string()} {midpoint}!: {e}"
