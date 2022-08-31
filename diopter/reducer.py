@@ -1,6 +1,7 @@
 import pickle
 import inspect
 import os
+import sys
 import subprocess
 import logging
 import shutil
@@ -24,12 +25,14 @@ def emit_module_imports(reduction_callback: ReductionCallback) -> str:
     callback_module_path = inspect.getsourcefile(type(reduction_callback))
     assert callback_module_path
     callback_module = inspect.getmodulename(callback_module_path)
+    sys_path_append = "".join(f'\nsys.path.append("{p}")' for p in sys.path)
 
     return f"""import importlib
 import pickle
 import sys
 from pathlib import Path
 sys.path.insert(0, "{str(Path(callback_module_path).parent)}")
+{sys_path_append}
 
 from {callback_module} import {callback_name}
 """
