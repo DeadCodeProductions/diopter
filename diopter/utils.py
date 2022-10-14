@@ -25,7 +25,11 @@ def run_cmd(
         cmd, cwd=str(working_dir), check=True, env=env, capture_output=True, **kwargs
     )
 
-    res: str = output.stdout.decode("utf-8").strip()
+    res: str = (
+        output.stdout.decode("utf-8").strip()
+        + "\n"
+        + output.stderr.decode("utf-8").strip()
+    ).strip()
     return res
 
 
