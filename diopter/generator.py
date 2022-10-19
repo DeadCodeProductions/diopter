@@ -1,4 +1,3 @@
-import logging
 import subprocess
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed, Executor
@@ -9,36 +8,52 @@ from tempfile import NamedTemporaryFile
 from typing import Iterator, Optional
 
 from diopter.sanitizer import sanitize_code as sanitize
+from diopter.compiler import SourceProgram, Language
 
 
 class Generator:
     @abstractmethod
-    def generate_raw_code(self) -> str:
+    def generate_program_impl(self) -> SourceProgram:
+        """Concrete subclasses must implement this
+
+        Returns:
+            SourceProgram: generated program
+        """
         pass
 
     @abstractmethod
-    def filter_code(self, code: str) -> bool:
+    def filter_program(self, program: SourceProgram) -> bool:
+        """Concrete subclasses must implement this to check if the generated
+           program should be discared
+        Args:
+            program (SourceProgram): the program to check
+        Returns:
+            bool: if the program is good(sanitized)
+        """
         # TODO: the sanitizer should be configurable, e.g., only warnings + UB
+        # one solution is to pass a sanitizer object that checks SourcePrograms
         pass
 
-    def generate_code(self) -> str:
+    def generate_program(self) -> SourceProgram:
         while True:
-            code = self.generate_raw_code()
-            if self.filter_code(code):
-                return code
-            logging.debug("Code didn't pass the filter")
+            program = self.generate_program_impl()
+            if self.filter_program(program):
+                return program
 
-    def generate_code_parallel(
+    def generate_programs_parallel(
         self, n: int, e: Optional[Executor] = None, jobs: Optional[int] = None
-    ) -> Iterator[str]:
-        """Args:
-        n: how many cases to generate
-        e: the executor used for running the code generation jobs
-        jobs: the number of concurrent jobs, if none cpu_count() will be used (ignored if e is not None)
+    ) -> Iterator[SourceProgram]:
+        """
+        Args:
+            n (int): how many cases to generate
+            e (Optional[Executor]): the executor used for running the code generation jobs
+            jobs (Optional[int]): the number of concurrent jobs, if none cpu_count() will be used (ignored if e is not None)
+        Returns:
+            Iterator[SourceProgram]: the generated programs
         """
 
-        def make_futures(e: Executor) -> Iterator[str]:
-            futures = (e.submit(self.generate_code) for _ in range(n))
+        def make_futures(e: Executor) -> Iterator[SourceProgram]:
+            futures = (e.submit(self.generate_program) for _ in range(n))
             for future in as_completed(futures):
                 yield future.result()
 
@@ -116,15 +131,16 @@ class CSmithGenerator(Generator):
         self.options = (
             options_pool if options_pool else CSmithGenerator.default_options_pool
         )
+        # XXX: don't hardcode the path here
         self.include_path = (
             include_path if include_path else "/usr/include/csmith-2.3.0"
         )
 
-    def generate_raw_code(self) -> str:
+    def generate_program_impl(self) -> SourceProgram:
         """Generate random code with csmith.
 
         Returns:
-            str: csmith generated program.
+            SourceProgram: csmith generated program.
         """
 
         cmd = [self.csmith] + CSmithGenerator.fixed_options
@@ -135,11 +151,22 @@ class CSmithGenerator(Generator):
                 cmd.append(f"--no-{option}")
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         assert result.returncode == 0
-        return result.stdout.decode("utf-8")
+        return SourceProgram(
+            code=result.stdout.decode("utf-8"),
+            language=Language.C,
+            available_macros=(),
+            defined_macros=(),
+            include_paths=(),
+            system_include_paths=(self.include_path,),
+            flags=(),
+        )
 
-    def filter_code(self, code: str) -> bool:
-        if len(code) < self.minimum_length or len(code) > self.maximum_length:
+    def filter_program(self, program: SourceProgram) -> bool:
+        if (
+            len(program.code) < self.minimum_length
+            or len(program.code) > self.maximum_length
+        ):
             return False
         return sanitize(
-            self.gcc, self.clang, self.ccomp, code, f"-I {self.include_path}"
+            self.gcc, self.clang, self.ccomp, program.code, f"-I {self.include_path}"
         )
