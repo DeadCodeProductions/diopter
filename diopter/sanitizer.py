@@ -1,67 +1,85 @@
+""" A sanitizer used to check programs for potential correctness issues
+
+The following checks are currently supported: checking for compiler warnings,
+checking a program with clang's undefined behaviour and address sanitizers,
+checking a program with CompCert (ccomp).
+
+Example:
+
+program : SourceProgram = ...
+sanitizer = Sanitizer()
+if not sanitizer.sanitize(program):
+    # the program is broken
+"""
+
 import subprocess
-import tempfile
-import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
-from types import TracebackType
+from dataclasses import dataclass
 
-from diopter.utils import run_cmd, save_to_tmp_file
+from diopter.compiler import (
+    CompilerExe,
+    CComp,
+    OptLevel,
+    SourceProgram,
+    CompilationSetting,
+    CompileError,
+)
+from diopter.utils import run_cmd, TempDirEnv
 
 
-def get_cc_output(cc: str, file: Path, flags: str, cc_timeout: int) -> tuple[int, str]:
-    cmd = [
-        cc,
-        str(file),
-        "-c",
-        "-o/dev/null",
-        "-Wall",
-        "-Wextra",
-        "-Wpedantic",
-        "-O1",
-        "-Wno-builtin-declaration-mismatch",
-    ]
-    if flags:
-        cmd.extend(flags.split())
-    try:
-        logging.debug(cmd)
-        result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=cc_timeout
+@dataclass(frozen=True, kw_only=True)
+class SanitizationResult:
+    """Why did the sanitizer fail on a program?"""
+
+    check_warnings_failed: bool = False
+    ub_address_sanitizer_failed: bool = False
+    ccomp_failed: bool = False
+    timeout: bool = False
+
+    def __bool__(self) -> bool:
+        """True indicates that sanitization was successful"""
+        return not (
+            self.check_warnings_failed
+            or self.ub_address_sanitizer_failed
+            or self.ccomp_failed
+            or self.timeout
         )
-    except subprocess.TimeoutExpired:
-        return 1, ""
-    except subprocess.CalledProcessError:
-        # Possibly a compilation failure
-        return 1, ""
-    return result.returncode, result.stdout.decode("utf-8")
 
 
-def check_compiler_warnings(
-    clang: str, gcc: str, file: Path, flags: str, cc_timeout: int
-) -> bool:
+class Sanitizer:
+    """A wrapper of various sanitization methods.
+
+    Sanitizer tests an input program using  various checks
+    to rule of obvious ways a program can be broken:
+    - compiler warnings
+    - address and undefined behavior sanitizers
+    - CompCert
+
+    Attributes:
+        gcc (CompilerExe):
+            gcc used for checking compiler warnings
+        clang (CompilerExe):
+            clang used for checking compiler warnings and ub/address sanitizers result
+        ccomp (Optional[CComp]):
+            CompCert used for validating the program
+        checked_warnings (Optional[tuple[str,...]]):
+            the warnings whose presence to check
+        use_ub_address_sanitizer (bool):
+            whether Sanitizer.sanitize should use clang's ub and address sanitizers
+        check_warnings_and_sanitizer_opt_level (OptLevel):
+            optimization level used when checking for warnings and running sanitizers
+        compilation_timeout (int):
+            seconds to wait before aborting when compiling the program
+        execution_timeout (int):
+            seconds to wait before aborting when executing the program (ub/asan)
+        ccomp_timeout  (int):
+            seconds to wait before aborting when interpreting the program with ccomp
     """
-    Check if the compiler outputs any warnings that indicate
-    undefined behaviour.
 
-    Args:
-        clang (str): Normal executable of clang.
-        gcc (str): Normal executable of gcc.
-        file (Path): File to compile.
-        flags (str): (additional) flags to be used when compiling.
-        cc_timeout (int): Timeout for the compilation in seconds.
-
-    Returns:
-        bool: True if no warnings were found.
-    """
-    clang_rc, clang_output = get_cc_output(clang, file, flags, cc_timeout)
-    gcc_rc, gcc_output = get_cc_output(gcc, file, flags, cc_timeout)
-
-    if clang_rc != 0 or gcc_rc != 0:
-        logging.debug(f"Compilation failed: {clang_output}")
-        logging.debug(f"Compilation failed: {gcc_output}")
-        return False
-
-    warnings = [
+    default_warnings = (
         "conversions than data arguments",
         "incompatible redeclaration",
         "ordered comparison between pointer",
@@ -98,193 +116,236 @@ def check_compiler_warnings(
         "return type of ‘main’ is not ‘int’",
         "past the end of the array",
         "no return statement in function returning non-void",
-    ]
+    )
 
-    ws = [w for w in warnings if w in clang_output or w in gcc_output]
-    if len(ws) > 0:
-        logging.debug(f"Compiler warnings found: {ws}")
-        return False
-
-    return True
-
-
-class CCompEnv:
-    def __init__(self) -> None:
-        self.td: tempfile.TemporaryDirectory[str]
-
-    def __enter__(self) -> Path:
-        self.td = tempfile.TemporaryDirectory()
-        tempfile.tempdir = self.td.name
-        return Path(self.td.name)
-
-    def __exit__(
+    def __init__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_value: Optional[BaseException],
-        exc_traceback: Optional[TracebackType],
-    ) -> None:
-        tempfile.tempdir = None
+        *,
+        check_warnings: bool = True,
+        use_ub_address_sanitizer: bool = True,
+        use_ccomp_if_available: bool = True,
+        gcc: Optional[CompilerExe] = None,
+        clang: Optional[CompilerExe] = None,
+        ccomp: Optional[CComp] = None,
+        check_warnings_and_sanitizer_opt_level: OptLevel = OptLevel.O3,
+        checked_warnings: Optional[tuple[str, ...]] = None,
+        compilation_timeout: int = 8,
+        execution_timeout: int = 4,
+        ccomp_timeout: int = 16,
+    ):
+        """
+        Args:
+            check_warnings (bool):
+                if True gcc's and clang's outputs will be used to
+                filter out cases with Sanitizer.default_warnings
+            use_ub_address_sanitizer (bool):
+                whether to use clang's undefined behavior and address sanitizers
+            use_ccomp_if_available (Optional[bool]):
+                if ccomp should be used, if ccomp is not None this argument is ignored
+            gcc (Optional[CompilerExe]):
+                the gcc executable to use, if not provided
+                CompilerExe.get_system_gcc will be used
+            clang (Optional[CompilerExe]):
+                the clang executable to use, if not provided
+                CompilerExe.get_system_clang will be used
+            ccomp (Optional[CComp]:
+                the ccomp executable to use, if not provided and use_ccomp
+                is True CComp.get_system_ccomp will be used if available
+            check_warnings_and_sanitizer_opt_level (OptLevel):
+                which optimization level to use when checking for compiler
+                warnings and ub/address sanitizer issues
+            checked_warnings (Optional[tuple[str,...]]):
+                if not None implies check_warnings = True and will
+                be used instead of Sanitizer.default_warnings
+            compilation_timeout (int):
+                after how many seconds to abort a compilation and fail
+            execution_timeout (int):
+                after how many seconds to abort an execution and fail
+                (relevant for use_ub_sanitizer)
+            ccomp_timeout (int):
+                after how many seconds to abort interpreting with ccomp and fail
+        """
+        self.gcc = gcc if gcc else CompilerExe.get_system_gcc()
+        self.clang = clang if clang else CompilerExe.get_system_clang()
+        self.ccomp = ccomp
+        if use_ccomp_if_available and not self.ccomp:
+            self.ccomp = CComp.get_system_ccomp()
+        if checked_warnings:
+            self.checked_warnings = checked_warnings
+        elif check_warnings:
+            self.checked_warnings = Sanitizer.default_warnings
+        self.use_ub_address_sanitizer = use_ub_address_sanitizer
+        self.check_warnings_and_sanitizer_opt_level = (
+            check_warnings_and_sanitizer_opt_level
+        )
+        self.compilation_timeout = compilation_timeout
+        self.execution_timeout = execution_timeout
+        self.ccomp_timeout = ccomp_timeout
 
+    def check_for_compiler_warnings(self, program: SourceProgram) -> SanitizationResult:
+        """Checks the program for compiler warnings.
 
-def verify_with_ccomp(
-    ccomp: str, file: Path, flags: str, compcert_timeout: int
-) -> bool:
-    """Check if CompCert is unhappy about something.
+        Compiles program with self.gcc and self.clang and reports
+        if any of self.checked_warnings is present in their outputs
+        (or if the compilation timed out).
 
-    Args:
-        ccomp (str): Path to ccomp executable or name in $PATH.
-        file (Path): File to compile.
-        flags (str): Additional flags to use.
-        compcert_timeout (int): Timeout in seconds.
+        Args:
+            program (SourceProgram):
+                The program to check.
 
-    Returns:
-        bool: True if CompCert does not complain.
-    """
-    with CCompEnv() as tmpdir:
-        cmd = [
-            ccomp,
-            str(file),
-            "-interp",
-            "-fall",
-        ]
-        if flags:
-            cmd.extend(flags.replace("isystem", "I").split())
-        res = True
-        try:
-            run_cmd(
-                cmd,
-                additional_env={"TMPDIR": str(tmpdir)},
-                timeout=compcert_timeout,
-            )
-            res = True
-        except subprocess.CalledProcessError as e:
-            if e.stderr:
-                output = e.stderr.decode("utf-8").strip()
-                logging.debug(f"CComp failed with {output}")
-            res = False
-        except subprocess.TimeoutExpired:
-            res = False
+        Returns:
+            SanitizationResult:
+                whether the program failed sanitization or not.
+        """
 
-        logging.debug(f"CComp returncode {res}")
+        def check_warnings_impl(comp: CompilationSetting) -> SanitizationResult:
+            try:
+                result = comp.compile_program_to_object(
+                    program,
+                    Path("/dev/null"),
+                    (
+                        "-Wall",
+                        "-Wextra",
+                        "-Wpedantic",
+                        "-Wno-builtin-declaration-mismatch",
+                    ),
+                    timeout=self.compilation_timeout,
+                )
+            except subprocess.TimeoutExpired:
+                return SanitizationResult(timeout=True)
+            except CompileError:
+                return SanitizationResult(check_warnings_failed=True)
+            for line in result.stdout_stderr_output.splitlines():
+                if line in self.checked_warnings:
+                    return SanitizationResult(check_warnings_failed=True)
+            return SanitizationResult()
 
-        return res
+        with TempDirEnv():
+            if gcc_result := check_warnings_impl(
+                CompilationSetting(
+                    compiler=self.gcc,
+                    opt_level=self.check_warnings_and_sanitizer_opt_level,
+                )
+            ):
+                return gcc_result
+            if clang_result := check_warnings_impl(
+                CompilationSetting(
+                    compiler=self.clang,
+                    opt_level=self.check_warnings_and_sanitizer_opt_level,
+                )
+            ):
+                return clang_result
 
+        return SanitizationResult()
 
-def use_ub_sanitizers(
-    clang: str, file: Path, flags: str, cc_timeout: int, exe_timeout: int
-) -> bool:
-    """Run clang undefined-behaviour tests
+    def check_for_ub_and_address_sanitizer_errors(
+        self,
+        program: SourceProgram,
+    ) -> SanitizationResult:
+        """Checks the program for UB and address sanitizer errors.
 
-    Args:
-        clang (str): Path to clang executable or name in $PATH.
-        file (Path): File to test.
-        flags (str): Additional flags to use.
-        cc_timeout (int): Timeout for compiling in seconds.
-        exe_timeout (int): Timeout for running the resulting exe in seconds.
+        Compiles program with self.clang and -fsanitize=undefined,address, then
+        it runs the checked program and reports whether it failed (or timed out).
 
-    Returns:
-        bool: True if no undefined was found.
-    """
-    cmd = [clang, str(file), "-O2", "-fsanitize=undefined,address"]
-    if flags:
-        cmd.extend(flags.split())
+        Args:
+            program (SourceProgram):
+                The program to check.
 
-    with CCompEnv():
-        with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as exe:
+        Returns:
+            SanitizationResult:
+                whether the program failed sanitization or not.
+        """
+
+        with TempDirEnv():
+            exe = tempfile.NamedTemporaryFile(suffix=".exe", delete=False)
             exe.close()
             os.chmod(exe.name, 0o777)
-            cmd.append(f"-o{exe.name}")
-            result = subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=cc_timeout,
-            )
-            if result.returncode != 0:
-                logging.debug(f"UB Sanitizer returncode {result.returncode}")
-                if os.path.exists(exe.name):
-                    os.remove(exe.name)
-                return False
-            result = subprocess.run(
-                exe.name,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=exe_timeout,
-            )
-            os.remove(exe.name)
-            logging.debug(f"UB Sanitizer returncode {result.returncode}")
-            return result.returncode == 0
+            # Compile program with -fsanitize=...
+            try:
+                CompilationSetting(
+                    compiler=self.clang,
+                    opt_level=self.check_warnings_and_sanitizer_opt_level,
+                ).compile_program_to_executable(
+                    program,
+                    Path(exe.name),
+                    (
+                        "-Wall",
+                        "-Wextra",
+                        "-Wpedantic",
+                        "-Wno-builtin-declaration-mismatch",
+                        "-fsanitize=undefined,address",
+                    ),
+                    timeout=self.compilation_timeout,
+                )
+            except subprocess.TimeoutExpired:
+                return SanitizationResult(timeout=True)
+            except CompileError:
+                return SanitizationResult(ub_address_sanitizer_failed=True)
 
+            # Run the instrumented binary
+            try:
+                run_cmd(exe.name, timeout=self.execution_timeout)
+            except subprocess.TimeoutExpired:
+                return SanitizationResult(timeout=True)
+            except subprocess.CalledProcessError:
+                return SanitizationResult(ub_address_sanitizer_failed=True)
+            return SanitizationResult()
 
-def sanitize_file(
-    gcc: str,
-    clang: str,
-    ccomp: str,
-    file: Path,
-    flags: str,
-    cc_timeout: int = 8,
-    exe_timeout: int = 4,
-    compcert_timeout: int = 16,
-) -> bool:
-    """Check if there is anything that could indicate undefined behaviour.
+    def check_for_ccomp_errors(
+        self, program: SourceProgram
+    ) -> Optional[SanitizationResult]:
+        """Checks the program with self.ccomp if available.
 
-    Args:
-        gcc (str): Path to gcc executable or name in $PATH.
-        clang (str): Path to clang executable or name in $PATH.
-        ccomp (str): Path to ccomp executable or name in $PATH.
-        file (Path): File to check.
-        flags (str): Additional flags to use.
-        cc_timeout (int): Compiler timeout in seconds.
-        exe_timeout (int): Undef.-Behaviour. runtime timeout in seconds.
-        compcert_timeout (int): CompCert timeout in seconds.
+        Interprets program with self.ccomp if available and reports whether
+        it failed (or timed out).
 
-    Returns:
-        bool: True if nothing indicative of undefined behaviour is found.
-    """
-    # Taking advantage of shortciruit logic...
-    try:
-        return (
-            check_compiler_warnings(gcc, clang, file, flags, cc_timeout)
-            and use_ub_sanitizers(clang, file, flags, cc_timeout, exe_timeout)
-            and verify_with_ccomp(ccomp, file, flags, compcert_timeout)
-        )
-    except subprocess.TimeoutExpired:
-        return False
+        Args:
+            program (SourceProgram):
+                The program to check.
 
+        Returns:
+            Optional[SanitizationResult]:
+                if self.ccomp is not None, whether the program
+                failed sanitization or not.
+        """
+        if not self.ccomp:
+            return None
+        with TempDirEnv():
+            try:
+                if not self.ccomp.check_program(program, timeout=self.ccomp_timeout):
+                    return SanitizationResult(ccomp_failed=True)
+            except subprocess.TimeoutExpired:
+                return SanitizationResult(timeout=True)
 
-def sanitize_code(
-    gcc: str,
-    clang: str,
-    ccomp: str,
-    code: str,
-    flags: str,
-    cc_timeout: int = 8,
-    exe_timeout: int = 4,
-    compcert_timeout: int = 16,
-) -> bool:
-    """Check if there is anything that could indicate undefined behaviour.
+            return SanitizationResult()
 
-    Args:
-        gcc (str): Path to gcc executable or name in $PATH.
-        clang (str): Path to clang executable or name in $PATH.
-        ccomp (str): Path to ccomp executable or name in $PATH.
-        code (str): The code to check.
-        flags (str): Additional flags to use.
-        cc_timeout (int): Compiler timeout in seconds.
-        exe_timeout (int): Undef.-Behaviour. runtime timeout in seconds.
-        compcert_timeout (int): CompCert timeout in seconds.
+    def sanitize(self, program: SourceProgram) -> SanitizationResult:
+        """Runs all the enabled sanitization checks.
 
-    Returns:
-        bool: True if nothing indicative of undefined behaviour is found.
-    """
-    ntf = save_to_tmp_file(code, ".c")
-    return sanitize_file(
-        gcc,
-        clang,
-        ccomp,
-        Path(ntf.name),
-        flags,
-        cc_timeout,
-        exe_timeout,
-        compcert_timeout,
-    )
+        Runs all available sanitization checks based on self.checked_warnings,
+        self.use_ub_address_sanitizer, and self.ccomp. It reports if any of them
+        failed or if some check timed out.
+
+        Args:
+            program (SourceProgram):
+                The program to check.
+
+        Returns:
+            SanitizationResult:
+                Whether the program failed sanitization or not.
+        """
+
+        if self.checked_warnings and (
+            check_warnings_result := self.check_for_compiler_warnings(program)
+        ):
+            return check_warnings_result
+
+        if self.use_ub_address_sanitizer and (
+            sanitizer_result := self.check_for_ub_and_address_sanitizer_errors(program)
+        ):
+            return sanitizer_result
+
+        if self.ccomp and (ccomp_result := self.check_for_ccomp_errors(program)):
+            return ccomp_result
+
+        return SanitizationResult()

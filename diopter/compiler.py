@@ -13,7 +13,7 @@ from shutil import which
 
 from ccbuilder import CompilerProject, Revision, Builder
 
-from diopter.utils import run_cmd
+from diopter.utils import run_cmd, save_to_tmp_file
 
 
 class Language(Enum):
@@ -26,6 +26,13 @@ class Language(Enum):
                 return "-xc"
             case Language.CPP:
                 return "-xc++"
+
+    def to_suffix(self) -> str:
+        match self:
+            case Language.C:
+                return ".c"
+            case Language.CPP:
+                return ".cpp"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -179,15 +186,16 @@ class CompileContext:
 @dataclass(frozen=True, kw_only=True)
 class CompilationInfo:
     source_file: Path
+    stdout_stderr_output: str
 
 
 @dataclass(frozen=True, kw_only=True)
 class CompilationSetting:
     compiler: CompilerExe
     opt_level: OptLevel
-    flags: tuple[str, ...]
-    include_paths: tuple[str, ...]
-    system_include_paths: tuple[str, ...]
+    flags: tuple[str, ...] = tuple()
+    include_paths: tuple[str, ...] = tuple()
+    system_include_paths: tuple[str, ...] = tuple()
 
     def with_revision(self, revision: Revision, builder: Builder) -> CompilationSetting:
         new_compiler = CompilerExe(
@@ -218,11 +226,16 @@ class CompilationSetting:
             )
         )
 
-    def get_llvm_ir_from_program(self, program: SourceProgram) -> str:
-        return self.get_asm_from_program(program, ("--emit-llvm",))
+    def get_llvm_ir_from_program(
+        self, program: SourceProgram, timeout: Optional[int] = None
+    ) -> str:
+        return self.get_asm_from_program(program, ("--emit-llvm",), timeout=timeout)
 
     def get_asm_from_program(
-        self, program: SourceProgram, additional_flags: tuple[str, ...] = ()
+        self,
+        program: SourceProgram,
+        additional_flags: tuple[str, ...] = (),
+        timeout: Optional[int] = None,
     ) -> str:
         with CompileContext(program.code) as context_res:
             code_file, asm_file = context_res
@@ -238,7 +251,11 @@ class CompilationSetting:
             )
 
             try:
-                run_cmd(cmd)
+                run_cmd(
+                    cmd,
+                    timeout=timeout,
+                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                )
             except subprocess.CalledProcessError as e:
                 raise CompileError.from_called_process_exception(e)
 
@@ -250,6 +267,7 @@ class CompilationSetting:
         program: SourceProgram,
         output_file: Path,
         flags: tuple[str, ...] = tuple(),
+        timeout: Optional[int] = None,
     ) -> CompilationInfo:
         with CompileContext(program.code) as context_res:
             code_file, _ = context_res
@@ -263,21 +281,39 @@ class CompilationSetting:
                 + list(flags)
             )
             try:
-                run_cmd(cmd)
+                output = run_cmd(
+                    cmd,
+                    timeout=timeout,
+                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                )
             except subprocess.CalledProcessError as e:
                 raise CompileError.from_called_process_exception(e)
-            return CompilationInfo(source_file=Path(code_file))
+            return CompilationInfo(
+                source_file=Path(code_file), stdout_stderr_output=output
+            )
 
     def compile_program_to_object(
-        self, program: SourceProgram, object_file: Path
+        self,
+        program: SourceProgram,
+        object_file: Path,
+        additional_flags: tuple[str, ...] = tuple(),
+        timeout: Optional[int] = None,
     ) -> CompilationInfo:
-        return self._compile_program_to_X(program, object_file, ("-c",))
+        return self._compile_program_to_X(
+            program, object_file, ("-c",) + additional_flags, timeout=timeout
+        )
 
     def compile_program_to_executable(
-        self, program: SourceProgram, executable_path: Path
+        self,
+        program: SourceProgram,
+        executable_path: Path,
+        additional_flags: tuple[str, ...] = tuple(),
+        timeout: Optional[int] = None,
     ) -> CompilationInfo:
         # TODO: check/set file permissions of executable_path if it exists?
-        return self._compile_program_to_X(program, executable_path)
+        return self._compile_program_to_X(
+            program, executable_path, additional_flags, timeout=timeout
+        )
 
 
 class ClangToolMode(Enum):
@@ -344,7 +380,11 @@ class ClangTool:
                 )
             )
             try:
-                result = run_cmd(cmd, timeout=self.timeout_s).strip()
+                result = run_cmd(
+                    cmd,
+                    timeout=self.timeout_s,
+                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                ).strip()
             except subprocess.CalledProcessError as e:
                 raise CompileError.from_called_process_exception(e)
 
@@ -354,3 +394,42 @@ class ClangTool:
                 case ClangToolMode.READ_MODIFIED_FILE:
                     with open(tf.name, "r") as f:
                         return f.read()
+
+
+@dataclass(frozen=True, kw_only=True)
+class CComp:
+    exe: Path
+
+    @staticmethod
+    def get_system_ccomp() -> Optional[CComp]:
+        ccomp = which("ccomp")
+        if not ccomp:
+            return None
+        return CComp(exe=Path(ccomp).absolute())
+
+    def check_program(
+        self, program: SourceProgram, timeout: Optional[int] = None
+    ) -> bool:
+        tf = save_to_tmp_file(program.code, suffix=program.language.to_suffix())
+        cmd = (
+            [
+                str(self.exe),
+                str(tf.name),
+                "-interp",
+                "-fall",
+            ]
+            + [
+                f"-I{ipath}"
+                for ipath in chain(program.include_paths, program.system_include_paths)
+            ]
+            + [f"-D{macro}" for macro in program.defined_macros]
+        )
+        try:
+            run_cmd(
+                cmd,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                timeout=timeout,
+            )
+        except subprocess.CalledProcessError:
+            return False
+        return True
