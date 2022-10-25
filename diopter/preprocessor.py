@@ -1,21 +1,24 @@
-import os
+""" Preprocessing of csmith files in a compiler portable manner
+
+Example:
+
+csmith_program: SourceProgram = ...
+preprocessed_csmith_program = preprocess_csmith_program(csmith_program)
+if preprocess_csmith_program:
+    # preprocessing was successful
+"""
+
 import re
-import shutil
-import tempfile
-from pathlib import Path
 from typing import Optional
+from dataclasses import replace
 
-from diopter.utils import save_to_tmp_file, run_cmd
-
-
-"""
-Functions to preprocess code for creduce.
-See creduce --help to see what it wants.
-"""
-
-
-class PreprocessError(Exception):
-    pass
+from diopter.compiler import (
+    CompilerExe,
+    CompileError,
+    CompilationSetting,
+    OptLevel,
+    SourceProgram,
+)
 
 
 def preprocess_lines(lines: list[str]) -> str:
@@ -64,37 +67,34 @@ def preprocess_lines(lines: list[str]) -> str:
     return "\n".join([line for i, line in enumerate(lines) if i not in lines_to_skip])
 
 
-def preprocess_csmith_file(
-    path: os.PathLike[str], compiler: str, flags: list[str]
-) -> str:
-
-    with tempfile.NamedTemporaryFile(suffix=".c") as tf:
-        shutil.copy(path, tf.name)
-
-        cmd = [
-            compiler,
-            tf.name,
-            "-P",
-            "-E",
-        ] + flags
-        lines = run_cmd(cmd).split("\n")
-
-        return preprocess_lines(lines)
-
-
-def preprocess_csmith_code(code: str, compiler: str, flags: list[str]) -> Optional[str]:
+def preprocess_csmith_program(
+    program: SourceProgram, compiler: CompilerExe
+) -> Optional[SourceProgram]:
     """Will *try* to preprocess code as if it comes from csmith.
 
     Args:
-        code (str): code to preprocess
-        compiler (str): the compiler to use for preprocessing
+        program (SourceProgram):
+            program to preprocess
+        compiler (CompilerExe):
+            the compiler to use for preprocessing
 
     Returns:
-        Optional[str]: preprocessed code if it was able to preprocess it.
+        Optional[SourceProgram]:
+            preprocessed program if it was able to preprocess it.
     """
-    tf = save_to_tmp_file(code, ".c")
+
     try:
-        res = preprocess_csmith_file(Path(tf.name), compiler, flags)
-        return res
-    except PreprocessError:
+        result = CompilationSetting(
+            compiler=compiler, opt_level=OptLevel.O0
+        ).preprocess_program(program)
+        return replace(
+            program,
+            code=preprocess_lines(result.stdout_stderr_output.split("\n")),
+            system_include_paths=tuple(
+                path
+                for path in program.system_include_paths
+                if not path.endswith("csmith.h")
+            ),
+        )
+    except CompileError:
         return None

@@ -265,7 +265,7 @@ class CompilationSetting:
     def _compile_program_to_X(
         self,
         program: SourceProgram,
-        output_file: Path,
+        output_file: Optional[Path],
         flags: tuple[str, ...] = tuple(),
         timeout: Optional[int] = None,
     ) -> CompilationInfo:
@@ -273,11 +273,8 @@ class CompilationSetting:
             code_file, _ = context_res
             cmd = (
                 self.get_compilation_base_cmd(program)
-                + [
-                    code_file,
-                    "-o",
-                    str(output_file),
-                ]
+                + [code_file]
+                + (["-o", str(output_file)] if output_file else [])
                 + list(flags)
             )
             try:
@@ -313,6 +310,16 @@ class CompilationSetting:
         # TODO: check/set file permissions of executable_path if it exists?
         return self._compile_program_to_X(
             program, executable_path, additional_flags, timeout=timeout
+        )
+
+    def preprocess_program(
+        self,
+        program: SourceProgram,
+        additional_flags: tuple[str, ...] = tuple(),
+        timeout: Optional[int] = None,
+    ) -> CompilationInfo:
+        return self._compile_program_to_X(
+            program, None, ("-P", "-E") + additional_flags, timeout=timeout
         )
 
 
