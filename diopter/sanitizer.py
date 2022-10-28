@@ -2,7 +2,6 @@ import subprocess
 import tempfile
 import logging
 import os
-from tempfile import NamedTemporaryFile
 from pathlib import Path
 from typing import Optional
 from types import TracebackType

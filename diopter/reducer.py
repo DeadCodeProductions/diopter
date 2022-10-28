@@ -4,11 +4,10 @@ import os
 import sys
 import subprocess
 import logging
-import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 from sys import stderr
-from typing import Callable, TextIO, Optional
+from typing import TextIO, Optional
 from multiprocessing import cpu_count
 
 from diopter.utils import run_cmd_to_logfile, TempDirEnv
@@ -59,8 +58,10 @@ def make_interestingness_script(
     code_filename is still interesting
 
     Args:
-        reduction_callback: the callback that will be serialized stored as a runnable script
-        code_filename: the file that the generated script will check everytime it is run
+        reduction_callback:
+            callback that will be serialized stored as a runnable script
+        code_filename:
+            file that the generated script will check everytime it is run
 
     Returns:
         The python3 script (str)
@@ -99,10 +100,15 @@ class Reducer:
         Reduce given code
 
         Args:
-            code: the code to reduce
-            interestingness_test: a concrete ReductionCallback that implementes the interestingness (can be generated with make_interestingness_check)
-            jobs: The number of Creduce jobs, if empty cpu_count() will be
-            log_file: Where to log Creduce's output, if empty stderr will be used
+            code:
+                the code to reduce
+            interestingness_test:
+                a concrete ReductionCallback that implementes the interestingness
+                (can be generated with make_interestingness_check).
+            jobs:
+                The number of Creduce jobs, if empty cpu_count() will be
+            log_file:
+                Where to log Creduce's output, if empty stderr will be used
 
         Returns:
             Reduced code, if successful.
