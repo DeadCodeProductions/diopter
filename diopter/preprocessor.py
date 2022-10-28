@@ -3,7 +3,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Generator, Iterable, Optional
+from typing import Optional
 
 from diopter.utils import save_to_tmp_file, run_cmd
 
@@ -38,8 +38,8 @@ def preprocess_lines(lines: list[str]) -> str:
         re.compile(r".*__asm__.*"),  # CompCert has problems
     ]
 
-    def is_start(l: str) -> bool:
-        return any([p_start.match(l) for p_start in start_patterns])
+    def is_start(line: str) -> bool:
+        return any([p_start.match(line) for p_start in start_patterns])
 
     lines_to_skip: list[int] = []
     for i, line in enumerate(lines):

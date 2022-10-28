@@ -2,16 +2,14 @@ import subprocess
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed, Executor
 from multiprocessing import cpu_count
-from pathlib import Path
 from random import randint
-from tempfile import NamedTemporaryFile
 from typing import Iterator, Optional
 
 from diopter.sanitizer import sanitize_code as sanitize
 from diopter.compiler import SourceProgram, Language
 
 
-class Generator:
+class Generator(ABC):
     @abstractmethod
     def generate_program_impl(self) -> SourceProgram:
         """Concrete subclasses must implement this
@@ -46,8 +44,9 @@ class Generator:
         """
         Args:
             n (int): how many cases to generate
-            e (Optional[Executor]): the executor used for running the code generation jobs
-            jobs (Optional[int]): the number of concurrent jobs, if none cpu_count() will be used (ignored if e is not None)
+            e (Optional[Executor]): executor used for running the code generation jobs
+            jobs (Optional[int]):
+                number of jobs, if None cpu_count() is used (ignored if e is not None)
         Returns:
             Iterator[SourceProgram]: the generated programs
         """
@@ -110,17 +109,23 @@ class CSmithGenerator(Generator):
         """
         Args:
             self:
-            csmith (Optional[str]): Path to executable or name in $PATH to csmith, if
-            empty "csmith" will be used
-            include_path (Optional[str]): The csmith include path, if empty
-            "/usr/include/csmith-2.3.0" will be used
-            options_pool (Optional[list[str]]): csmith options that will be randomly selected, if
-            empty default_options_pool will be used
-            minimum_length (int): The minimum length of a generated test case in characters.
-            maximum_length (int): The maximum length of a generated test case in characters.
-            clang (str): Path to executable or name in $PATH to clang. Default: "clang".
-            gcc (str): Path to executable or name in $PATH to gcc. Default: "gcc".
-            ccomp (str): Path to executable or name in $PATH to compcert. Default: "ccomp".
+            csmith (Optional[str]):
+                Path to csmith executable, if empty "csmith" will be used
+            include_path (Optional[str]):
+                csmith include path, if None "/usr/include/csmith-2.3.0" is used
+            options_pool (Optional[list[str]]):
+                csmith options that will be randomly selected,
+                if empty default_options_pool will be used
+            minimum_length (int):
+                The minimum length of a generated test case in characters.
+            maximum_length (int):
+                The maximum length of a generated test case in characters.
+            clang (str):
+                Path to executable or name in $PATH to clang. Default: "clang".
+            gcc (str):
+                Path to executable or name in $PATH to gcc. Default: "gcc".
+            ccomp (str):
+                Path to executable or name in $PATH to compcert. Default: "ccomp".
         """
         self.minimum_length = minimum_length
         self.maximum_length = maximum_length

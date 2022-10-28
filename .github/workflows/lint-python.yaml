@@ -10,6 +10,15 @@ jobs:
       - run: pip3 install . mypy
       - name: run mypy
         run: python3 -m mypy --strict 
+  flake8:
+    runs-on: ubuntu-latest
+    container:
+      image: python:3.10
+    steps:
+      - uses: actions/checkout@v2
+      - run: pip3 install . flake8
+      - name: run flake8
+        run: python3 -m flake8
   black:
     runs-on: ubuntu-latest
     container:

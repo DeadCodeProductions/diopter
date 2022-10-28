@@ -5,8 +5,6 @@ from typing import Optional
 from abc import ABC, abstractmethod
 
 from ccbuilder import (
-    Builder,
-    BuildException,
     Commit,
     CompilerProject,
     Repo,
@@ -37,7 +35,8 @@ def find_sorted_cached_commits_from_range(
         cache_prefix (Path): Path to the cache.
 
     Returns:
-        list[Commit]: All cached commits in [good_rev, bad_rev] ordered via the ancestor relation.
+        list[Commit]:
+            All cached commits in [good_rev, bad_rev] ordered via the ancestor relation.
     """
     possible_revs = repo.direct_first_parent_path(good_rev, bad_rev)
 
@@ -70,7 +69,8 @@ def _get_midpoint_after_failure(
         step = max(int(0.9 * range_size), 1)
         midpoint = repo.rev_to_commit(f"{bad_rev}~{step}")
     else:
-        # Symmetric to case above but jumping 10% into the other direction i.e 20% from our position.
+        # Symmetric to case above but jumping 10% into
+        # the other direction i.e 20% from our position.
         range_size = len(repo.direct_first_parent_path(good_rev, midpoint))
         step = max(int(0.2 * range_size), 1)
         midpoint = repo.rev_to_commit(f"{midpoint}~{step}")
@@ -105,17 +105,21 @@ class Bisector:
         project: CompilerProject,
         repo: Repo,
     ) -> Optional[Commit]:
-        """Bisect between `bad_rev` and `good_rev` based on the provided `test` callback.
+        """Bisect between `bad_rev` and `good_rev` based on the provided `test` callback
         `test(bad_rev)` must be True.
         `test(good_rev)` must be False.
 
         Args:
-            self:
-            test (BisectionCallback): Interestingness test.
-            bad_rev (Revision): Revision that shows the initial unwanted behaviour, defined in `test`.
-            good_rev (Revision): Revision that shows the initial correct behaviour.
-            project (CompilerProject): Which project on bisect in.
-            repo (Repo): Repository for the `project`.
+            test (BisectionCallback):
+                Interestingness test.
+            bad_rev (Revision):
+                Revision that shows the initial unwanted behaviour, defined in `test`.
+            good_rev (Revision):
+                Revision that shows the initial correct behaviour.
+            project (CompilerProject):
+                Which project on bisect in.
+            repo (Repo):
+                Repository for the `project`.
 
         Returns:
             Optional[Commit]: The bisection commit that introduced the behaviour
@@ -161,7 +165,7 @@ class Bisector:
                 pre_bisection_commit = repo.rev_to_commit(f"{bisection_commit}~")
                 bisection_res = test.check(bisection_commit)
                 pre_bisection_res = test.check(pre_bisection_commit)
-                if (bisection_res == True) and (pre_bisection_res == False):
+                if bisection_res and not pre_bisection_res:
                     return bisection_commit
                 logging.warning("Bisection check failed!")
                 return None
@@ -183,7 +187,7 @@ class Bisector:
             good_commit, bad_commit, project, repo, self.build_cache_prefix
         )
 
-        logging.info(f"Bisecting in cache...")
+        logging.info("Bisecting in cache...")
         midpoint = ""
         old_midpoint = ""
         while True:

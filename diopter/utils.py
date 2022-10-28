@@ -1,6 +1,5 @@
 import os
 import subprocess
-import logging
 import tempfile
 from pathlib import Path
 from typing import Union, Optional, Any, TextIO, IO
