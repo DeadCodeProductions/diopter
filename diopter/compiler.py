@@ -15,6 +15,8 @@ from ccbuilder import CompilerProject, Revision, Builder
 
 from diopter.utils import run_cmd, save_to_tmp_file
 
+#TODO: validate all paths
+
 
 class Language(Enum):
     C = 0
@@ -102,6 +104,10 @@ class CompilerExe:
         return CompilerExe(
             CompilerProject.LLVM, clang_path, parse_compiler_revision(clang_path)
         )
+
+    @staticmethod
+    def from_path(cc: Path) -> CompilerExe:
+        pass
 
 
 class OptLevel(Enum):

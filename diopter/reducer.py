@@ -12,6 +12,7 @@ from multiprocessing import cpu_count
 
 from diopter.utils import run_cmd_to_logfile, TempDirEnv
 
+#TODO: validate all paths
 
 class ReductionCallback(ABC):
     @abstractmethod

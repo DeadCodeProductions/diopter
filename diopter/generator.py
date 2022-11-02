@@ -9,6 +9,8 @@ from diopter.sanitizer import Sanitizer
 from diopter.compiler import SourceProgram, Language
 
 
+#TODO: validate all paths
+
 class Generator(ABC):
     def __init__(self, sanitizer: Sanitizer):
         self.sanitizer = sanitizer
