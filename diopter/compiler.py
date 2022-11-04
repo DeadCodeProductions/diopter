@@ -5,7 +5,7 @@ import os
 import subprocess
 from enum import Enum
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 from types import TracebackType
 from itertools import chain
@@ -61,6 +61,9 @@ class SourceProgram:
                 return ".c"
             case Language.CPP:
                 return ".cpp"
+
+    def with_code(self, new_code: str) -> SourceProgram:
+        return replace(self, code=new_code)
 
 
 def parse_compiler_revision(compiler_exe: Path) -> Revision:
