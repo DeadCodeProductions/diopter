@@ -94,6 +94,7 @@ class CSmithGenerator(Generator):
         "--no-argc",
         "--no-volatiles",
         "--no-volatile-pointers",
+        "--ccomp",
     ]
 
     def __init__(
