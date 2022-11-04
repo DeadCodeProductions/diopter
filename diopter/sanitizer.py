@@ -346,17 +346,18 @@ class Sanitizer:
                 Whether the program failed sanitization or not.
         """
 
-        if self.checked_warnings and (
+        if self.checked_warnings and not (
             check_warnings_result := self.check_for_compiler_warnings(program)
         ):
             return check_warnings_result
 
-        if self.use_ub_address_sanitizer and (
+        if self.use_ub_address_sanitizer and not (
             sanitizer_result := self.check_for_ub_and_address_sanitizer_errors(program)
         ):
             return sanitizer_result
 
-        if self.ccomp and (ccomp_result := self.check_for_ccomp_errors(program)):
+        if self.ccomp and not (ccomp_result := self.check_for_ccomp_errors(program)):
+            assert ccomp_result
             return ccomp_result
 
         return SanitizationResult()
