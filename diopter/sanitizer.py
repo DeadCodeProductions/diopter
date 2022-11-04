@@ -11,6 +11,7 @@ sanitizer = Sanitizer()
 if not sanitizer.sanitize(program):
     # the program is broken
 """
+from __future__ import annotations
 
 import subprocess
 import os
@@ -47,6 +48,16 @@ class SanitizationResult:
             or self.ccomp_failed
             or self.timeout
         )
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, bool):
+            return self.__bool__() == other
+        if not isinstance(other, SanitizationResult):
+            return NotImplemented
+        return self == other
+
+    def __ne__(self, other: object) -> bool:
+        return not self.__eq__(other)
 
 
 class Sanitizer:
