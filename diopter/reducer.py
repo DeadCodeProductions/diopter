@@ -147,6 +147,7 @@ class Reducer:
                     creduce_cmd,
                     log_file=log_file if log_file else stderr,
                     working_dir=Path(tmpdir),
+                    additional_env={"TMPDIR": str(tmpdir.absolute())},
                 )
             except subprocess.CalledProcessError as e:
                 logging.info(f"Failed to reduce code. Exception: {e}")
