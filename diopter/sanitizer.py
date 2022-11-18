@@ -91,6 +91,7 @@ class Sanitizer:
     """
 
     default_warnings = (
+        "cast to smaller integer type",
         "conversions than data arguments",
         "incompatible redeclaration",
         "ordered comparison between pointer",
@@ -227,22 +228,27 @@ class Sanitizer:
             except CompileError:
                 return SanitizationResult(check_warnings_failed=True)
             for line in result.stdout_stderr_output.splitlines():
-                if line in self.checked_warnings:
-                    return SanitizationResult(check_warnings_failed=True)
+                for checked_warning in self.checked_warnings:
+                    if checked_warning in line:
+                        return SanitizationResult(check_warnings_failed=True)
             return SanitizationResult()
 
         with TempDirEnv():
-            if gcc_result := check_warnings_impl(
-                CompilationSetting(
-                    compiler=self.gcc,
-                    opt_level=self.check_warnings_and_sanitizer_opt_level,
+            if not (
+                gcc_result := check_warnings_impl(
+                    CompilationSetting(
+                        compiler=self.gcc,
+                        opt_level=self.check_warnings_and_sanitizer_opt_level,
+                    )
                 )
             ):
                 return gcc_result
-            if clang_result := check_warnings_impl(
-                CompilationSetting(
-                    compiler=self.clang,
-                    opt_level=self.check_warnings_and_sanitizer_opt_level,
+            if not (
+                clang_result := check_warnings_impl(
+                    CompilationSetting(
+                        compiler=self.clang,
+                        opt_level=self.check_warnings_and_sanitizer_opt_level,
+                    )
                 )
             ):
                 return clang_result
