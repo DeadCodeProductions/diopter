@@ -1,16 +1,16 @@
-import pickle
 import inspect
-import os
-import sys
-import subprocess
 import logging
+import os
+import pickle
+import subprocess
+import sys
 from abc import ABC, abstractmethod
+from multiprocessing import cpu_count
 from pathlib import Path
 from sys import stderr
-from typing import TextIO, Optional
-from multiprocessing import cpu_count
+from typing import Optional, TextIO
 
-from diopter.utils import run_cmd_to_logfile, TempDirEnv
+from diopter.utils import TempDirEnv, run_cmd_to_logfile
 
 
 class ReductionCallback(ABC):

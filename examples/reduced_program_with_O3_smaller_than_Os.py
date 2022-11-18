@@ -8,11 +8,11 @@ that results in larger text with -Os than -O3
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+from diopter.compiler import CompilationSetting, CompilerExe, OptLevel, SourceProgram
 from diopter.generator import CSmithGenerator
-from diopter.sanitizer import Sanitizer
-from diopter.compiler import SourceProgram, CompilationSetting, CompilerExe, OptLevel
-from diopter.reducer import Reducer, ReductionCallback
 from diopter.preprocessor import preprocess_csmith_program
+from diopter.reducer import Reducer, ReductionCallback
+from diopter.sanitizer import Sanitizer
 from diopter.utils import run_cmd
 
 
