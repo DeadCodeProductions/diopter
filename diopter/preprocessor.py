@@ -9,13 +9,13 @@ if preprocess_csmith_program:
 """
 
 import re
-from typing import Optional
 from dataclasses import replace
+from typing import Optional
 
 from diopter.compiler import (
-    CompilerExe,
-    CompileError,
     CompilationSetting,
+    CompileError,
+    CompilerExe,
     OptLevel,
     SourceProgram,
 )

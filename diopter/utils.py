@@ -2,8 +2,8 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Union, Optional, Any, TextIO, IO
 from types import TracebackType
+from typing import IO, Any, Optional, TextIO, Union
 
 
 def run_cmd(

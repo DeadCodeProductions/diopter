@@ -13,22 +13,22 @@ if not sanitizer.sanitize(program):
 """
 from __future__ import annotations
 
-import subprocess
 import os
+import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass
 
 from diopter.compiler import (
-    CompilerExe,
     CComp,
-    OptLevel,
-    SourceProgram,
     CompilationSetting,
     CompileError,
+    CompilerExe,
+    OptLevel,
+    SourceProgram,
 )
-from diopter.utils import run_cmd, TempDirEnv
+from diopter.utils import TempDirEnv, run_cmd
 
 
 @dataclass(frozen=True, kw_only=True)

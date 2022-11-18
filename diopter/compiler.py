@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-import tempfile
 import os
 import subprocess
-from enum import Enum
-from pathlib import Path
+import tempfile
 from dataclasses import dataclass, replace
-from typing import Optional
-from types import TracebackType
+from enum import Enum
 from itertools import chain
+from pathlib import Path
 from shutil import which
+from types import TracebackType
+from typing import Optional
 
-from ccbuilder import CompilerProject, Revision, Builder
+from ccbuilder import Builder, CompilerProject, Revision
 
 from diopter.utils import run_cmd, save_to_tmp_file
 

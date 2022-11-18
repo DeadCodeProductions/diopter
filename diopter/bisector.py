@@ -1,16 +1,10 @@
 import logging
 import math
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
-from abc import ABC, abstractmethod
 
-from ccbuilder import (
-    Commit,
-    CompilerProject,
-    Repo,
-    Revision,
-    find_cached_revisions,
-)
+from ccbuilder import Commit, CompilerProject, Repo, Revision, find_cached_revisions
 
 
 class BisectionException(Exception):

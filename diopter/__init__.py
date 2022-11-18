@@ -1,11 +1,4 @@
-from diopter import (
-    bisector,
-    generator,
-    preprocessor,
-    reducer,
-    sanitizer,
-    utils,
-)
+from diopter import bisector, generator, preprocessor, reducer, sanitizer, utils
 
 __all__ = [
     "generator",

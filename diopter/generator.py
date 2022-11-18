@@ -1,12 +1,12 @@
 import subprocess
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor, as_completed, Executor
+from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
 from multiprocessing import cpu_count
 from random import randint
 from typing import Iterator, Optional
 
+from diopter.compiler import Language, SourceProgram
 from diopter.sanitizer import Sanitizer
-from diopter.compiler import SourceProgram, Language
 
 
 class Generator(ABC):
