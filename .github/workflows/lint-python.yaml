@@ -3,8 +3,6 @@ name: Lint Python and Format
 jobs:
   mypy:
     runs-on: ubuntu-latest
-    container:
-      image: python:3.10
     steps:
       - uses: actions/checkout@v2
       - run: pip3 install . mypy
@@ -12,8 +10,6 @@ jobs:
         run: python3 -m mypy --strict 
   flake8:
     runs-on: ubuntu-latest
-    container:
-      image: python:3.10
     steps:
       - uses: actions/checkout@v2
       - run: pip3 install . flake8
@@ -21,8 +17,6 @@ jobs:
         run: python3 -m flake8
   black:
     runs-on: ubuntu-latest
-    container:
-      image: python:3.10
     steps:
       - uses: actions/checkout@v2
       - run: pip3 install black
@@ -30,13 +24,8 @@ jobs:
         run: python3 -m black --check .
   pytest:
       runs-on: ubuntu-latest
-      container:
-        image: python:3.10
       steps:
         - uses: actions/checkout@v2
-        - run: |
-            apt-get update 
-            apt install -y clang-14
         - run: pip3 install . pytest
         - name: Run tests
           run: python3 -m pytest test
