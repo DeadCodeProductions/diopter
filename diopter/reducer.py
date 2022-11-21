@@ -7,6 +7,7 @@ import sys
 from abc import ABC, abstractmethod
 from multiprocessing import cpu_count
 from pathlib import Path
+from shutil import which
 from sys import stderr
 from typing import Optional, TextIO
 
@@ -88,6 +89,7 @@ class Reducer:
             used
         """
         self.creduce = creduce if creduce else "creduce"
+        assert which(self.creduce), f"{self.creduce} is not executable"
 
     def reduce(
         self,
