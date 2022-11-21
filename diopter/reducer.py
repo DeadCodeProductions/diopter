@@ -66,7 +66,7 @@ def make_interestingness_script(
     Returns:
         The python3 script (str)
     """
-    prologue = "#!/usr/bin/env python3"
+    prologue = f"#!{sys.executable}"
     return "\n".join(
         (
             prologue,
