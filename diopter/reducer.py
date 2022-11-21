@@ -97,6 +97,7 @@ class Reducer:
         interestingness_test: ReductionCallback,
         jobs: Optional[int] = None,
         log_file: Optional[TextIO] = None,
+        debug: bool = False,
     ) -> Optional[str]:
         """
         Reduce given code
@@ -111,6 +112,8 @@ class Reducer:
                 The number of Creduce jobs, if empty cpu_count() will be
             log_file:
                 Where to log Creduce's output, if empty stderr will be used
+            debug:
+                Whether to pass the debug flag to creduce
 
         Returns:
             Reduced code, if successful.
@@ -143,6 +146,8 @@ class Reducer:
                 str(script_path.name),
                 str(code_file.name),
             ]
+            if debug:
+                creduce_cmd.append("--debug")
 
             try:
                 run_cmd_to_logfile(
