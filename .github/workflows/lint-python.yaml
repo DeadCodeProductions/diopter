@@ -43,7 +43,7 @@ jobs:
           sudo apt install creduce -y
           python -m pip install . pytest
       - name: Run tests
-        run: python -m pytest test --import-mode=importlib --pyargs
+        run: python -m pytest tests
   isort:
       runs-on: ubuntu-latest
       steps:
