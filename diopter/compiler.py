@@ -9,6 +9,8 @@ from itertools import chain
 from pathlib import Path
 from shutil import which
 from types import TracebackType
+
+# TODO: replace Optinal with | None
 from typing import Optional
 
 from ccbuilder import Builder, CompilerProject, Revision
@@ -17,10 +19,21 @@ from diopter.utils import run_cmd, save_to_tmp_file
 
 
 class Language(Enum):
+    """An enum denoting the source language of a program.
+    C and C++ are the two options.
+    """
+
     C = 0
     CPP = 1
 
     def get_language_flag(self) -> str:
+        """Returns the appriopriate flag to instruct the compiler driver
+        (gcc/clang) to treat the input file's language correctly.
+
+        Returns:
+            str:
+                -xc or -xc++
+        """
         match self:
             case Language.C:
                 return "-xc"
@@ -28,6 +41,13 @@ class Language(Enum):
                 return "-xc++"
 
     def get_linker_flag(self) -> str | None:
+        """Returns the appriopriate linker flag if this is a c++
+        language object such that the standard library is property linked.
+
+        Returns:
+            str | None:
+                the flag or nothing
+        """
         match self:
             case Language.C:
                 return None
@@ -35,6 +55,12 @@ class Language(Enum):
                 return "-lstdc++"
 
     def to_suffix(self) -> str:
+        """Returns a corresponding file suffix for the language.
+
+        Returns:
+            str:
+                file suffix
+        """
         match self:
             case Language.C:
                 return ".c"
@@ -44,6 +70,26 @@ class Language(Enum):
 
 @dataclass(frozen=True, kw_only=True)
 class SourceProgram:
+    """A C or C++ source program together with flags, includes and macro definitions.
+
+    Attributes:
+        code (str):
+            the source code
+        language (Language):
+            the program's language
+        available_macros (tuple[str,...]):
+            known macros that can be defined to affect the program's compilation (this
+            is not exhaustive, additional, e.g., system macros, might be available)
+        available_macros (tuple[str,...]):
+            macros that will be defined when compiling this program
+        include_paths (tuple[str,...]):
+            include paths which will be passed to the compiler (with -I)
+        system_include_paths (tuple[str,...]):
+            system include paths which will be passed to the compiler (with -isystem)
+        flags (tuple[str,...]):
+            flags, prefixed with a dash ("-") that will be passed to the compiler
+    """
+
     code: str
     language: Language
     available_macros: tuple[str, ...] = tuple()
@@ -53,6 +99,13 @@ class SourceProgram:
     flags: tuple[str, ...] = tuple()
 
     def get_compilation_flags(self) -> tuple[str, ...]:
+        """Returns flags based on the program's flags, include paths and macro defs.
+
+        Returns:
+            tuple[str, ...]:
+                the flags
+        """
+
         return tuple(
             chain(
                 self.flags,
@@ -63,17 +116,35 @@ class SourceProgram:
         )
 
     def get_file_suffix(self) -> str:
-        match self.language:
-            case Language.C:
-                return ".c"
-            case Language.CPP:
-                return ".cpp"
+        """Returns a corresponding file suffix for this program.
+
+        Returns:
+            str:
+                file suffix
+        """
+
+        return self.language.to_suffix()
 
     def with_code(self, new_code: str) -> SourceProgram:
+        """Returns a new program with its code replaced with new_code
+
+        Returns:
+            SourceProgram:
+                the new program
+        """
         return replace(self, code=new_code)
 
 
 def parse_compiler_revision(compiler_exe: Path) -> Revision:
+    """Tries to parse the compiler revision of the given executable (clang/gcc).
+
+    Args:
+        compiler_exe (Path): a path to the compiler executable
+
+    Returns:
+        Revision:
+            the parsed version
+    """
     info = run_cmd(f"{str(compiler_exe)} -v".split())
     for line in info.splitlines():
         if "clang version" in line:
@@ -85,15 +156,31 @@ def parse_compiler_revision(compiler_exe: Path) -> Revision:
 
 @dataclass(frozen=True)
 class CompilerExe:
+    """A compiler executable (gcc/clang).
+
+    Attributes:
+        project (CompilerProject): is this GCC or LLVM?
+        exe (Path): the path to the executable
+        revision (Revision): the compiler revision/version
+    """
+
     project: CompilerProject
     exe: Path
     revision: Revision
 
     def get_verbose_info(self) -> str:
+        """Returns:
+        str:
+            the output of exe -v
+        """
         return run_cmd(f"{self.exe} -v".split())
 
     @staticmethod
     def get_system_gcc() -> CompilerExe:
+        """Returns:
+        CompilerExe:
+            the system's gcc compiler
+        """
         gcc = which("gcc")
         assert gcc, "gcc is not in PATH"
         gcc_path = Path(gcc)
@@ -103,6 +190,10 @@ class CompilerExe:
 
     @staticmethod
     def get_system_clang() -> CompilerExe:
+        """Returns:
+        CompilerExe:
+            the system's clang compiler
+        """
         clang = which("clang")
         assert clang, "clang is not in PATH"
         clang_path = Path(clang)
@@ -112,6 +203,8 @@ class CompilerExe:
 
 
 class OptLevel(Enum):
+    """Optimization Levels supported by gcc and clang"""
+
     O0 = 0
     O1 = 1
     O2 = 2
@@ -121,6 +214,17 @@ class OptLevel(Enum):
 
     @staticmethod
     def from_str(s: str) -> OptLevel:
+        """ "Convertion from string
+
+        Args:
+            s (str):
+                the optimization level string
+
+        Returns:
+            OptLevel:
+                the conversion result
+        """
+
         match s:
             case "O0" | "0":
                 return OptLevel.O0
@@ -150,6 +254,17 @@ class CompileError(Exception):
     def from_called_process_exception(
         e: subprocess.CalledProcessError,
     ) -> CompileError:
+        """Convertion from a CalledProcessError
+
+        Args:
+            e (CalledProcessError):
+                the exception raised by subprocess.run
+
+        Returns:
+            CompileError:
+                error containing the stdout and stderr of the compiler invocation
+        """
+
         output = ""
         if e.stdout:
             output += "\nSTDOUT====\n" + e.stdout.decode("utf-8")
@@ -201,12 +316,30 @@ class CompilationInfo:
 
 @dataclass(frozen=True, kw_only=True)
 class CompilationSetting:
+    """
+    A compilation setting that can be used to compile source programs
+
+    Attributes:
+        compiler (CompilerExe):
+            the compiler used to compile inputs
+        opt_level (OptLevel):
+            which optimization level to use
+        flags (tuple[str,...]):
+            which flags to use when compiling programs
+        include_path (tuple[str,...]):
+            which include paths to pass to the compiler (passed with -I)
+        system_include_path (tuple[str,...]):
+            which system include paths to pass to the compiler (passed with -isystem)
+    """
+
     compiler: CompilerExe
     opt_level: OptLevel
     flags: tuple[str, ...] = tuple()
     include_paths: tuple[str, ...] = tuple()
     system_include_paths: tuple[str, ...] = tuple()
+    # TODO: timeout_s: int = 8
 
+    # TODO: drop this, ccbuilder should be independent of this file
     def with_revision(self, revision: Revision, builder: Builder) -> CompilationSetting:
         new_compiler = CompilerExe(
             self.compiler.project,
@@ -222,6 +355,17 @@ class CompilationSetting:
         )
 
     def get_compilation_base_cmd(self, program: SourceProgram) -> list[str]:
+        """Combines the program's flags with the flags of this compilation
+        setting.
+
+        Args:
+            program(SourceProgram):
+                the program whose flags will be extracted
+
+        Returns:
+            list[str]:
+                list of flags
+        """
         cmd = list(
             chain(
                 (
@@ -242,6 +386,17 @@ class CompilationSetting:
     def get_llvm_ir_from_program(
         self, program: SourceProgram, timeout: Optional[int] = None
     ) -> str:
+        """Extracts LLVM-IR from the program.
+
+        This only works with LLVM compilers.
+
+        Args:
+           program (SourceProgram): input program
+           timeout (int | None): timeout in seconds for the compilation command
+        Returns:
+            str:
+                LLVM-IR
+        """
         return self.get_asm_from_program(program, ("--emit-llvm",), timeout=timeout)
 
     def get_asm_from_program(
@@ -250,6 +405,17 @@ class CompilationSetting:
         additional_flags: tuple[str, ...] = (),
         timeout: Optional[int] = None,
     ) -> str:
+        """Extracts assembly code from the program.
+
+        Args:
+           program (SourceProgram): input program
+           additional_flags (tuple[str, ...]): additional flags used for the compilation
+           timeout (int | None): timeout in seconds for the compilation command
+
+        Returns:
+            str:
+                assembly code
+        """
         with CompileContext(program.code) as context_res:
             code_file, asm_file = context_res
             cmd = (
@@ -282,6 +448,7 @@ class CompilationSetting:
         flags: tuple[str, ...] = tuple(),
         timeout: Optional[int] = None,
     ) -> CompilationInfo:
+
         with CompileContext(program.code) as context_res:
             code_file, _ = context_res
             cmd = (
@@ -309,6 +476,19 @@ class CompilationSetting:
         additional_flags: tuple[str, ...] = tuple(),
         timeout: Optional[int] = None,
     ) -> CompilationInfo:
+        """Compiles program to object file
+
+        Args:
+           program (SourceProgram): input program
+           object_file (Path): path to the output
+           additional_flags (tuple[str, ...]): additional flags used for the compilation
+           timeout (int | None): timeout in seconds for the compilation command
+
+        Returns:
+            CompilationInfo:
+                information about the compilation
+        """
+
         return self._compile_program_to_X(
             program, object_file, ("-c",) + additional_flags, timeout=timeout
         )
@@ -320,6 +500,19 @@ class CompilationSetting:
         additional_flags: tuple[str, ...] = tuple(),
         timeout: Optional[int] = None,
     ) -> CompilationInfo:
+        """Compiles program to object file
+
+        Args:
+           program (SourceProgram): input program
+           executable_file (Path): path to the output
+           additional_flags (tuple[str, ...]): additional flags used for the compilation
+           timeout (int | None): timeout in seconds for the compilation command
+
+        Returns:
+            CompilationInfo:
+                information about the compilation
+        """
+
         # TODO: check/set file permissions of executable_path if it exists?
         return self._compile_program_to_X(
             program, executable_path, additional_flags, timeout=timeout
@@ -331,6 +524,20 @@ class CompilationSetting:
         additional_flags: tuple[str, ...] = tuple(),
         timeout: Optional[int] = None,
     ) -> CompilationInfo:
+        """Preprocesses the program
+
+        Args:
+           program (SourceProgram): input program
+           additional_flags (tuple[str, ...]): additional flags used for the compilation
+           timeout (int | None): timeout in seconds for the compilation command
+
+        Returns:
+            CompilationInfo:
+                information about the compilation, the
+                preprocessing result is stored in the output
+
+        """
+
         return self._compile_program_to_X(
             program, None, ("-P", "-E") + additional_flags, timeout=timeout
         )
@@ -342,12 +549,28 @@ class ClangToolMode(Enum):
 
 
 def find_standard_include_paths(
-    llvm: CompilerExe, cpp: bool = False
+    clang: CompilerExe, cpp: bool = False
 ) -> tuple[str, ...]:
+    """Finds the stanard include paths used by clang.
+
+    This is used by clang tools as the standard include paths must be
+    explicilty passed to them.
+
+    Args:
+        clang (CompilerExe): the clang executable from which to extract the paths
+        cpp (bool): whether to include the standard c++ includes
+
+    Returns:
+        tuple[str,...]:
+            the include paths
+    """
     with tempfile.NamedTemporaryFile(suffix=".c" if not cpp else ".cpp") as tf:
-        cmd = [str(llvm.exe), tf.name, "-c", "-o/dev/null", "-v"]
+        # run clang with verbose output on an empty temporary file
+        cmd = [str(clang.exe), tf.name, "-c", "-o/dev/null", "-v"]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         assert result.returncode == 0
+
+        # parse the output and extract includes
         output = result.stdout.decode("utf-8").split("\n")
         start = (
             next(
@@ -363,23 +586,63 @@ def find_standard_include_paths(
 
 @dataclass(frozen=True)
 class ClangTool:
+    """A clang based tool that can be run on SourceProgram(s).
+
+    Attributes:
+        exe (Path):
+            the clang tool executable
+        standard_c_include_paths (tuple[str, ...]):
+            which standard include paths to use for C program inputs
+        standard_cxx_include_paths (tuple[str, ...]):
+            which standard include paths to use for C++ program inputs
+        timeout_s (int, default = 8):
+            timeout in seconds for running the clang tool
+    """
+
     exe: Path
     standard_c_include_paths: tuple[str, ...]
     standard_cxx_include_paths: tuple[str, ...]
     timeout_s: int = 8
 
+    # TODO: @cache?
     @staticmethod
-    def init_with_paths_from_llvm(exe: Path, llvm: CompilerExe) -> ClangTool:
-        assert llvm.project == CompilerProject.LLVM
+    def init_with_paths_from_clang(exe: Path, clang: CompilerExe) -> ClangTool:
+        """Create a clang tool using clang's standard include paths.
+
+        Args:
+            exe (Path): path to the clang tool
+            clang (CompilerExe): which clang to use to extract the standard paths
+
+        Returns:
+            ClangTool:
+                the clang tool
+        """
+        assert clang.project == CompilerProject.LLVM
         return ClangTool(
             exe,
-            find_standard_include_paths(llvm, cpp=False),
-            find_standard_include_paths(llvm, cpp=True),
+            find_standard_include_paths(clang, cpp=False),
+            find_standard_include_paths(clang, cpp=True),
         )
 
     def run_on_program(
         self, program: SourceProgram, tool_flags: list[str], mode: ClangToolMode
     ) -> str:
+        """Run the clang tool on the input program
+
+        Args:
+            program (SourceProgram):
+                the input program
+            tool_flags (list[str]):
+                flags to pass to the clang tool
+            mode (ClangToolMode):
+                whether to capture and return stdout & stderr
+                or to return the (modified) input file
+
+        Returns:
+            str:
+                either captured stdout/stderr or the modified input file
+
+        """
         with tempfile.NamedTemporaryFile(suffix=program.get_file_suffix()) as tf:
             with open(tf.name, "w") as f:
                 f.write(program.code)
@@ -418,10 +681,22 @@ class ClangTool:
 
 @dataclass(frozen=True, kw_only=True)
 class CComp:
+    """A ccomp(compcert) instance.
+
+    Attributes:
+        exe (Path): path to compcert/ccomp
+    """
+
     exe: Path
+    # TODO: timeout_s: int = 8
 
     @staticmethod
     def get_system_ccomp() -> Optional[CComp]:
+        """Returns:
+        CComp:
+            the system's ccomp
+        """
+
         ccomp = which("ccomp")
         if not ccomp:
             return None
@@ -430,6 +705,16 @@ class CComp:
     def check_program(
         self, program: SourceProgram, timeout: Optional[int] = None
     ) -> bool:
+        """Checks the input program for errors using ccomp's interpreter mode.
+
+        Args:
+           program (SourceProgram): the input program
+           timeout (int | None): timeout in seconds for the checking
+
+        Returns:
+            bool:
+                was the check successful?
+        """
         tf = save_to_tmp_file(program.code, suffix=program.language.to_suffix())
         cmd = (
             [
