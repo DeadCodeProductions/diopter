@@ -1,9 +1,16 @@
 import os
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
 from typing import IO, Any, Optional, TextIO, Union
+
+
+@dataclass(frozen=True, kw_only=True)
+class CommandOutput:
+    stdout: str
+    stderr: str
 
 
 def run_cmd(
@@ -11,7 +18,7 @@ def run_cmd(
     working_dir: Optional[Path] = None,
     additional_env: dict[str, str] = {},
     **kwargs: Any,  # https://github.com/python/mypy/issues/8772
-) -> str:
+) -> CommandOutput:
 
     if working_dir is None:
         working_dir = Path(os.getcwd())
@@ -24,12 +31,10 @@ def run_cmd(
         cmd, cwd=str(working_dir), check=True, env=env, capture_output=True, **kwargs
     )
 
-    res: str = (
-        output.stdout.decode("utf-8").strip()
-        + "\n"
-        + output.stderr.decode("utf-8").strip()
-    ).strip()
-    return res
+    return CommandOutput(
+        stdout=output.stdout.decode("utf-8").strip(),
+        stderr=output.stderr.decode("utf-8").strip(),
+    )
 
 
 def run_cmd_to_logfile(
