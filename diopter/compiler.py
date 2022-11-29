@@ -20,12 +20,19 @@ class Language(Enum):
     C = 0
     CPP = 1
 
-    def get_lang_flag(self) -> str:
+    def get_language_flag(self) -> str:
         match self:
             case Language.C:
                 return "-xc"
             case Language.CPP:
                 return "-xc++"
+
+    def get_linker_flag(self) -> str | None:
+        match self:
+            case Language.C:
+                return None
+            case Language.CPP:
+                return "-lstdc++"
 
     def to_suffix(self) -> str:
         match self:
@@ -215,11 +222,11 @@ class CompilationSetting:
         )
 
     def get_compilation_base_cmd(self, program: SourceProgram) -> list[str]:
-        return list(
+        cmd = list(
             chain(
                 (
                     str(self.compiler.exe),
-                    program.language.get_lang_flag(),
+                    program.language.get_language_flag(),
                     f"-{self.opt_level.name}",
                 ),
                 self.flags,
@@ -228,6 +235,9 @@ class CompilationSetting:
                 program.get_compilation_flags(),
             )
         )
+        if linker_flag := program.language.get_linker_flag():
+            cmd.append(linker_flag)
+        return cmd
 
     def get_llvm_ir_from_program(
         self, program: SourceProgram, timeout: Optional[int] = None
