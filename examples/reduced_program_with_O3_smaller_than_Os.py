@@ -19,7 +19,7 @@ from diopter.utils import run_cmd
 def get_size(program: SourceProgram, setting: CompilationSetting) -> int:
     with NamedTemporaryFile(suffix=".o") as ntf:
         setting.compile_program_to_object(program, Path(ntf.name))
-        size_cmd_output = run_cmd(f"size {ntf.name}")
+        size_cmd_output = run_cmd(f"size {ntf.name}").stdout
         line = list(size_cmd_output.splitlines())[-1].strip()
         s = line.split()[0]
         return int(s)

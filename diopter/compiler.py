@@ -146,7 +146,7 @@ def parse_compiler_revision(compiler_exe: Path) -> Revision:
             the parsed version
     """
     info = run_cmd(f"{str(compiler_exe)} -v".split())
-    for line in info.splitlines():
+    for line in info.stderr.splitlines():
         if "clang version" in line:
             return line[len("clang version") :].strip()
         if "gcc version" in line:
@@ -173,7 +173,7 @@ class CompilerExe:
         str:
             the output of exe -v
         """
-        return run_cmd(f"{self.exe} -v".split())
+        return run_cmd(f"{self.exe} -v".split()).stderr
 
     @staticmethod
     def get_system_gcc() -> CompilerExe:
@@ -466,7 +466,8 @@ class CompilationSetting:
             except subprocess.CalledProcessError as e:
                 raise CompileError.from_called_process_exception(e)
             return CompilationInfo(
-                source_file=Path(code_file), stdout_stderr_output=output
+                source_file=Path(code_file),
+                stdout_stderr_output=output.stdout + "\n" + output.stderr,
             )
 
     def compile_program_to_object(
@@ -543,11 +544,6 @@ class CompilationSetting:
         )
 
 
-class ClangToolMode(Enum):
-    CAPTURE_OUT_ERR = 0
-    READ_MODIFIED_FILE = 1
-
-
 def find_standard_include_paths(
     clang: CompilerExe, cpp: bool = False
 ) -> tuple[str, ...]:
@@ -582,6 +578,19 @@ def find_standard_include_paths(
         )
         end = next(i for i, line in enumerate(output) if "End of search list." in line)
         return tuple(output[i].strip() for i in range(start, end))
+
+
+class ClangToolMode(Enum):
+    CAPTURE_OUT_ERR = 0
+    READ_MODIFIED_FILE = 1
+    CAPTURE_OUT_ERR_AND_READ_MODIFIED_FILED = 2
+
+
+@dataclass(frozen=True, kw_only=True)
+class ClangToolResult:
+    modified_source_code: str | None
+    stdout: str | None
+    stderr: str | None
 
 
 @dataclass(frozen=True)
@@ -626,7 +635,7 @@ class ClangTool:
 
     def run_on_program(
         self, program: SourceProgram, tool_flags: list[str], mode: ClangToolMode
-    ) -> str:
+    ) -> ClangToolResult:
         """Run the clang tool on the input program
 
         Args:
@@ -635,12 +644,12 @@ class ClangTool:
             tool_flags (list[str]):
                 flags to pass to the clang tool
             mode (ClangToolMode):
-                whether to capture and return stdout & stderr
-                or to return the (modified) input file
+                whether to capture and return stdout & stderr,
+                return the modified source code, or do both
 
         Returns:
-            str:
-                either captured stdout/stderr or the modified input file
+            ClangToolResult:
+                captured stdout/stderr and/or modified source code
 
         """
         with tempfile.NamedTemporaryFile(suffix=program.get_file_suffix()) as tf:
@@ -667,16 +676,29 @@ class ClangTool:
                     cmd,
                     timeout=self.timeout_s,
                     additional_env={"TMPDIR": str(tempfile.gettempdir())},
-                ).strip()
+                )
             except subprocess.CalledProcessError as e:
                 raise CompileError.from_called_process_exception(e)
 
             match mode:
                 case ClangToolMode.CAPTURE_OUT_ERR:
-                    return result
+                    return ClangToolResult(
+                        modified_source_code=None,
+                        stdout=result.stdout,
+                        stderr=result.stderr,
+                    )
                 case ClangToolMode.READ_MODIFIED_FILE:
                     with open(tf.name, "r") as f:
-                        return f.read()
+                        return ClangToolResult(
+                            modified_source_code=f.read(), stdout=None, stderr=None
+                        )
+                case ClangToolMode.CAPTURE_OUT_ERR_AND_READ_MODIFIED_FILED:
+                    with open(tf.name, "r") as f:
+                        return ClangToolResult(
+                            modified_source_code=f.read(),
+                            stdout=result.stdout,
+                            stderr=result.stderr,
+                        )
 
 
 @dataclass(frozen=True, kw_only=True)
