@@ -314,6 +314,18 @@ class CompilationInfo:
     stdout_stderr_output: str
 
 
+@dataclass(frozen=True)
+class Object:
+    contents: bytes
+    source_file_path: Path
+
+    def text_size(self) -> int:
+        pass
+
+    def dump_contents(self, object_file: Path) -> None:
+        pass
+
+
 @dataclass(frozen=True, kw_only=True)
 class CompilationSetting:
     """
@@ -353,6 +365,32 @@ class CompilationSetting:
             include_paths=self.include_paths,
             system_include_paths=self.system_include_paths,
         )
+
+    def to_object(
+        self,
+        program: SourceProgram,
+        additional_flags: tuple[str, ...] = tuple(),
+        timeout: Optional[int] = None,
+    ) -> Object:
+        """Compiles program to an object file
+
+        Args:
+           program (SourceProgram): input program
+           additional_flags (tuple[str, ...]): additional flags used for the compilation
+           timeout (int | None): timeout in seconds for the compilation command
+
+        Returns:
+            Object:
+                the compiled object
+        """
+
+        with tempfile.NamedTemporaryFile(
+            suffix=program.get_file_suffix(), mode="b"
+        ) as tf:
+            info = self._compile_program_to_X(
+                program, Path(tf.name), ("-c",) + additional_flags, timeout=timeout
+            )
+            return Object(tf.read(), info.source_file)
 
     def get_compilation_base_cmd(self, program: SourceProgram) -> list[str]:
         """Combines the program's flags with the flags of this compilation
