@@ -363,7 +363,7 @@ class Sanitizer:
             return sanitizer_result
 
         if self.ccomp and not (ccomp_result := self.check_for_ccomp_errors(program)):
-            assert ccomp_result
+            assert ccomp_result is not None
             return ccomp_result
 
         return SanitizationResult()
