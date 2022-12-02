@@ -87,7 +87,6 @@ class CSmithGenerator(Generator):
         "return-structs",
         "arg-structs",
         "dangling-global-pointers",
-        "ccomp",
     ]
     fixed_options = [
         "--no-unions",
