@@ -6,7 +6,7 @@ from diopter.compiler import (
     CompilerProject,
     Language,
     SourceProgram,
-    parse_compiler_revision,
+    parse_compiler,
 )
 from diopter.sanitizer import Sanitizer
 
@@ -17,10 +17,10 @@ def find_clang() -> CompilerExe | None:
 
     for version in v:
         path = Path("clang" + version)
+        project_revision = parse_compiler(path)
+        assert project_revision
         if which(path):
-            return CompilerExe(
-                CompilerProject.LLVM, path, parse_compiler_revision(path)
-            )
+            return CompilerExe(CompilerProject.LLVM, path, project_revision[1])
 
     return None
 
