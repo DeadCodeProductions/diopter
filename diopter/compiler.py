@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import subprocess
 import tempfile
@@ -762,3 +763,102 @@ class CComp:
         except subprocess.CalledProcessError:
             return False
         return True
+
+
+def compiler_settings_parser() -> argparse.ArgumentParser:
+    """Create an ArgumentParser for CompilationSetting.
+    Should be integrated with another parser via the `parent`
+    constructor argument as it does not create the `help` output
+    itself (otherwise, it would not be composable anymore).
+
+    Args:
+
+    Returns:
+        argparse.ArgumentParser:
+    """
+    # We do not add the help hear so this parser can be extendend or extend another one.
+    parser = argparse.ArgumentParser(add_help=False)
+
+    parser.add_argument(
+        "compiler",
+        type=Path,
+    )
+    parser.add_argument("-I", action="append")
+    parser.add_argument("-O")
+    parser.add_argument("-isystem", action="append")
+    parser.add_argument("-D", action="append")
+    parser.add_argument("-o")
+    # XXX: Parsed bug ignored for now (TM)
+    parser.add_argument("-c", action="store_true")
+    parser.add_argument("-S", action="store_true")
+
+    return parser
+
+
+def parse_compile_settings(
+    parsed_args: argparse.Namespace, rest: list[str]
+) -> tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
+    """Parse a CompilationSetting from the provided parsed_args and rest.
+    The parser that yielded `parsed_args` and `rest` must include the
+    `compiler_settings_parser()` as a parent.
+
+    Args:
+        parsed_args (argparse.Namespace): Argument namespace
+        rest (list[str]): Unparsed output
+
+    Returns:
+        tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
+            - CompilationSetting
+            - macros set or unset
+            - source files provided
+            - specified output file
+    """
+
+    CPP_EXT = (".cc", ".cxx", ".cpp")
+    C_EXT = (".c",)
+
+    sources: list[str] = []
+    flags: list[str] = []
+    for arg in rest:
+        if arg.lower().endswith(CPP_EXT + C_EXT):
+            sources.append(arg)
+        else:
+            flags.append(arg)
+
+    include_paths: tuple[str, ...] = tuple(parsed_args.I) if parsed_args.I else tuple()
+    system_include_paths: tuple[str, ...] = (
+        tuple(parsed_args.isystem) if parsed_args.isystem else tuple()
+    )
+    macro_definitions: tuple[str, ...] = (
+        tuple(parsed_args.D) if parsed_args.D else tuple()
+    )
+
+    cexe = CompilerExe.from_path(Path(parsed_args.compiler))
+
+    csetting = CompilationSetting(
+        compiler=cexe,
+        opt_level=OptLevel.from_str(parsed_args.O),
+        include_paths=include_paths,
+        system_include_paths=system_include_paths,
+        flags=tuple(flags),
+    )
+    return csetting, macro_definitions, sources, parsed_args.o
+
+
+def parse_compile_settings_from_string(
+    s: str,
+) -> tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
+    """Parse the compile settings provided in `s`.
+
+    Args:
+        s (str): compilation command string to be parsed.
+
+    Returns:
+        tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
+            see `parse_compile_settings`.
+    """
+    parser = argparse.ArgumentParser(parents=[compiler_settings_parser()])
+    parsed_args, rest = parser.parse_known_intermixed_args(
+        [p.strip() for p in s.split() if p]
+    )
+    return parse_compile_settings(parsed_args, rest)
