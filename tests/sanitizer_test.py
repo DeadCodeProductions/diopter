@@ -1,10 +1,9 @@
 from pathlib import Path
 from shutil import which
 
-from ccbuilder import CompilerProject
-
 from diopter.compiler import (
     CompilerExe,
+    CompilerProject,
     Language,
     SourceProgram,
     parse_compiler_revision,
