@@ -136,23 +136,25 @@ class SourceProgram:
 Revision = str
 
 
-def parse_compiler_revision(compiler_exe: Path) -> Revision:
-    """Tries to parse the compiler revision of the given executable (clang/gcc).
+def parse_compiler(compiler_exe: Path) -> tuple[CompilerProject, Revision] | None:
+    """Tries to find the compiler project parse the revision
+    of the given executable (clang/gcc).
 
     Args:
         compiler_exe (Path): a path to the compiler executable
 
     Returns:
-        Revision:
-            the parsed version
+        (CompilerProject, Revision) | None :
+            compiler project (LLVM or GCC)  and the parsed version, None if
+            the parsing failed
     """
     info = run_cmd(f"{str(compiler_exe)} -v".split())
     for line in info.stderr.splitlines():
         if "clang version" in line:
-            return line[len("clang version") :].strip()
+            return CompilerProject.LLVM, line[len("clang version") :].strip()
         if "gcc version" in line:
-            return line[len("gcc version") :].strip().split()[0]
-    return "unknown"
+            return CompilerProject.GCC, line[len("gcc version") :].strip().split()[0]
+    return None
 
 
 class CompilerProject(Enum):
@@ -193,9 +195,9 @@ class CompilerExe:
         gcc = which("gcc")
         assert gcc, "gcc is not in PATH"
         gcc_path = Path(gcc)
-        return CompilerExe(
-            CompilerProject.GCC, gcc_path, parse_compiler_revision(gcc_path)
-        )
+        project_revision = parse_compiler(gcc_path)
+        assert project_revision is not None
+        return CompilerExe(CompilerProject.GCC, gcc_path, project_revision[1])
 
     @staticmethod
     def get_system_clang() -> CompilerExe:
@@ -206,9 +208,15 @@ class CompilerExe:
         clang = which("clang")
         assert clang, "clang is not in PATH"
         clang_path = Path(clang)
-        return CompilerExe(
-            CompilerProject.LLVM, clang_path, parse_compiler_revision(clang_path)
-        )
+        project_revision = parse_compiler(clang_path)
+        assert project_revision is not None
+        return CompilerExe(CompilerProject.LLVM, clang_path, project_revision[1])
+
+    @staticmethod
+    def from_path(cc: Path) -> CompilerExe:
+        project_revision = parse_compiler(cc)
+        assert project_revision
+        return CompilerExe(project_revision[0], cc, project_revision[1])
 
 
 class OptLevel(Enum):
