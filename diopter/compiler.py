@@ -13,8 +13,6 @@ from types import TracebackType
 # TODO: replace Optinal with | None
 from typing import Optional
 
-from ccbuilder import Builder, CompilerProject, Revision
-
 from diopter.utils import run_cmd, save_to_tmp_file
 
 
@@ -135,6 +133,9 @@ class SourceProgram:
         return replace(self, code=new_code)
 
 
+Revision = str
+
+
 def parse_compiler_revision(compiler_exe: Path) -> Revision:
     """Tries to parse the compiler revision of the given executable (clang/gcc).
 
@@ -152,6 +153,14 @@ def parse_compiler_revision(compiler_exe: Path) -> Revision:
         if "gcc version" in line:
             return line[len("gcc version") :].strip().split()[0]
     return "unknown"
+
+
+class CompilerProject(Enum):
+    GCC = 0
+    LLVM = 1
+
+    def to_string(self) -> str:
+        return "gcc" if self == CompilerProject.GCC else "clang"
 
 
 @dataclass(frozen=True)
@@ -338,21 +347,6 @@ class CompilationSetting:
     include_paths: tuple[str, ...] = tuple()
     system_include_paths: tuple[str, ...] = tuple()
     # TODO: timeout_s: int = 8
-
-    # TODO: drop this, ccbuilder should be independent of this file
-    def with_revision(self, revision: Revision, builder: Builder) -> CompilationSetting:
-        new_compiler = CompilerExe(
-            self.compiler.project,
-            builder.build(self.compiler.project, revision, True),
-            revision,
-        )
-        return CompilationSetting(
-            compiler=new_compiler,
-            opt_level=self.opt_level,
-            flags=self.flags,
-            include_paths=self.include_paths,
-            system_include_paths=self.system_include_paths,
-        )
 
     def get_compilation_base_cmd(self, program: SourceProgram) -> list[str]:
         """Combines the program's flags with the flags of this compilation
