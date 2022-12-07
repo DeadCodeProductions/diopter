@@ -35,6 +35,18 @@ sys.path.insert(0, "{str(Path(callback_module_path).parent)}")
 {sys_path_append}
 
 from {callback_module} import {callback_name}
+
+import os
+import signal
+from time import sleep
+
+os.setpgrp()
+def cleanup(signum, frame):
+    os.killpg(0, signal.SIGTERM)
+    sleep(1)
+    os.killpg(0, signal.SIGKILL)
+
+signal.signal(signal.SIGTERM, cleanup)
 """
 
 
