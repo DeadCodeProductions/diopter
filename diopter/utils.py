@@ -1,4 +1,5 @@
 import os
+import shlex
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -25,10 +26,15 @@ def run_cmd(
     env = os.environ.copy()
     env.update(additional_env)
 
-    if isinstance(cmd, str):
-        cmd = cmd.strip().split(" ")
+    if isinstance(cmd, list):
+        cmd = " ".join(cmd)
     output = subprocess.run(
-        cmd, cwd=str(working_dir), check=True, env=env, capture_output=True, **kwargs
+        shlex.split(cmd.replace('"', '\\"')),
+        cwd=str(working_dir),
+        check=True,
+        env=env,
+        capture_output=True,
+        **kwargs,
     )
 
     return CommandOutput(
@@ -49,11 +55,11 @@ def run_cmd_to_logfile(
     env = os.environ.copy()
     env.update(additional_env)
 
-    if isinstance(cmd, str):
-        cmd = cmd.strip().split(" ")
+    if isinstance(cmd, list):
+        cmd = " ".join(cmd)
 
     subprocess.run(
-        cmd,
+        shlex.split(cmd),
         cwd=working_dir,
         check=True,
         stdout=log_file,

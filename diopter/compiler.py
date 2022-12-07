@@ -270,6 +270,7 @@ class CompileError(Exception):
 
     @staticmethod
     def from_called_process_exception(
+        cmd: str,
         e: subprocess.CalledProcessError,
     ) -> CompileError:
         """Convertion from a CalledProcessError
@@ -283,30 +284,27 @@ class CompileError(Exception):
                 error containing the stdout and stderr of the compiler invocation
         """
 
-        output = ""
+        output = cmd
         if e.stdout:
             output += "\nSTDOUT====\n" + e.stdout.decode("utf-8")
         if e.stderr:
-            output = "\nSTDERR====\n" + e.stderr.decode("utf-8")
+            output += "\nSTDERR====\n" + e.stderr.decode("utf-8")
         return CompileError(output)
 
 
-class CompileContext:
-    def __init__(self, code: str):
-        self.code = code
+class TemporarySourceCodeFile:
+    def __init__(self, program: SourceProgram):
+        self.program = program
         self.fd_code: Optional[int] = None
-        self.fd_asm: Optional[int] = None
-        self.code_file: Optional[str] = None
-        self.asm_file: Optional[str] = None
+        self.code_file: str | None = None
 
-    def __enter__(self) -> tuple[str, str]:
-        self.fd_code, self.code_file = tempfile.mkstemp(suffix=".c")
-        self.fd_asm, self.asm_file = tempfile.mkstemp(suffix=".s")
-
+    def __enter__(self) -> Path:
+        self.fd_code, self.code_file = tempfile.mkstemp(
+            suffix=self.program.language.to_suffix()
+        )
         with open(self.code_file, "w") as f:
-            f.write(self.code)
-
-        return (self.code_file, self.asm_file)
+            f.write(self.program.code)
+        return Path(self.code_file).absolute()
 
     def __exit__(
         self,
@@ -314,14 +312,9 @@ class CompileContext:
         exc_value: Optional[BaseException],
         exc_traceback: Optional[TracebackType],
     ) -> None:
-        if self.code_file and self.fd_code and self.asm_file and self.fd_asm:
+        if self.code_file and self.fd_code:
             os.remove(self.code_file)
             os.close(self.fd_code)
-            # In case of a CompileError,
-            # the file itself might not exist.
-            if Path(self.asm_file).exists():
-                os.remove(self.asm_file)
-            os.close(self.fd_asm)
         else:
             raise CompileError("Compiler context exited but was not entered")
 
@@ -353,7 +346,7 @@ class CompilationOutput:
     filename: Path
     kind: CompilationOutputKind
 
-    def to_flag(self) -> str:
+    def to_cmd(self) -> str:
         if self.kind == CompilationOutputKind.Unspecified:
             return ""
         if kind_flag := self.kind.to_flag():
@@ -398,63 +391,79 @@ class CompilationSetting:
     # XXX: add init to check that flags, paths, macros have the proper form?
     # i.e., that dashes are there, -I is not etc
 
-    # XXX: support multiple program inputs?
     def get_compilation_cmd(
         self,
-        program: SourceProgram,
+        program: tuple[SourceProgram, Path],
         output: CompilationOutput,
         include_language_flags: bool = True,
     ) -> list[str]:
-        cmd = list(
-            chain(
-                (
-                    str(self.compiler.exe),
-                    f"-{self.opt_level.name}",
-                ),
-                self.flags,
-                (f"-I{path}" for path in self.include_paths),
-                (f"-isystem{path}" for path in self.system_include_paths),
-                (f"-D{macro}" for macro in self.macro_definitions),
-                program.get_compilation_flags(),
-            )
-        )
-        # TODO: move this to source program?
-        if include_language_flags:
-            cmd.append(program.language.get_language_flag())
-            if output.kind == CompilationOutputKind.Exec:
-                if linker_flag := program.language.get_linker_flag():
-                    cmd.append(linker_flag)
-        cmd.append(output.to_flag())
-        return cmd
-
-    def get_compilation_base_cmd(self, program: SourceProgram) -> list[str]:
-        """Combines the program's flags with the flags of this compilation
-        setting.
+        """Assembles a compilation invocation based on the
+        input programs and the output.
 
         Args:
-            program(SourceProgram):
-                the program whose flags will be extracted
-
+            program (tuple[SourceProgram, Path]):
+                flags from the SourcePrograms are extracted and
+                the corresponding path are included in the output
+            output (CompilationOutput):
+                the output path and potentially additional flags
+                based on the output kind
+            include_language_flags (bool):
+                whether to include additional flags that specify
+                the source language and relevant linker flags
         Returns:
-            list[str]:
-                list of flags
+            str:
+                The assembled compilation command
         """
         cmd = list(
             chain(
                 (
                     str(self.compiler.exe),
-                    program.language.get_language_flag(),
                     f"-{self.opt_level.name}",
                 ),
+                (program[0].language.get_language_flag(),)
+                if include_language_flags
+                else ("",),
                 self.flags,
                 (f"-I{path}" for path in self.include_paths),
                 (f"-isystem{path}" for path in self.system_include_paths),
-                program.get_compilation_flags(),
+                (f"-D{macro}" for macro in self.macro_definitions),
+                program[0].get_compilation_flags(),
+                (str(program[1]),),
             )
         )
-        if linker_flag := program.language.get_linker_flag():
-            cmd.append(linker_flag)
+
+        if include_language_flags and output.kind == CompilationOutputKind.Exec:
+            if linker_flag := program[0].language.get_linker_flag():
+                cmd.append(linker_flag)
+        cmd.append(output.to_cmd())
         return cmd
+
+    def compile_program(
+        self,
+        program: SourceProgram,
+        output: CompilationOutput,
+        additional_flags: tuple[str, ...] = tuple(),
+        timeout: Optional[int] = None,
+    ) -> CompilationInfo:
+
+        with TemporarySourceCodeFile(program) as code_file:
+            cmd = self.get_compilation_cmd((program, code_file), output, True) + list(
+                additional_flags
+            )
+            try:
+                command_output = run_cmd(
+                    cmd,
+                    timeout=timeout,
+                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                )
+            except subprocess.CalledProcessError as e:
+                raise CompileError.from_called_process_exception(" ".join(cmd), e)
+            return CompilationInfo(
+                source_file=Path(code_file),
+                stdout_stderr_output=command_output.stdout
+                + "\n"
+                + command_output.stderr,
+            )
 
     def get_llvm_ir_from_program(
         self, program: SourceProgram, timeout: Optional[int] = None
@@ -489,59 +498,15 @@ class CompilationSetting:
             str:
                 assembly code
         """
-        with CompileContext(program.code) as context_res:
-            code_file, asm_file = context_res
-            cmd = (
-                self.get_compilation_base_cmd(program)
-                + [
-                    code_file,
-                    "-S",
-                    "-o",
-                    asm_file,
-                ]
-                + list(additional_flags)
+        with tempfile.NamedTemporaryFile(suffix=".s") as asm_file:
+            self.compile_program(
+                program,
+                CompilationOutput(Path(asm_file.name), CompilationOutputKind.Assembly),
+                additional_flags,
+                timeout,
             )
-
-            try:
-                run_cmd(
-                    cmd,
-                    timeout=timeout,
-                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
-                )
-            except subprocess.CalledProcessError as e:
-                raise CompileError.from_called_process_exception(e)
-
-            with open(asm_file, "r") as f:
+            with open(asm_file.name, "r") as f:
                 return f.read()
-
-    def _compile_program_to_X(
-        self,
-        program: SourceProgram,
-        output_file: Optional[Path],
-        flags: tuple[str, ...] = tuple(),
-        timeout: Optional[int] = None,
-    ) -> CompilationInfo:
-
-        with CompileContext(program.code) as context_res:
-            code_file, _ = context_res
-            cmd = (
-                self.get_compilation_base_cmd(program)
-                + [code_file]
-                + (["-o", str(output_file)] if output_file else [])
-                + list(flags)
-            )
-            try:
-                output = run_cmd(
-                    cmd,
-                    timeout=timeout,
-                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
-                )
-            except subprocess.CalledProcessError as e:
-                raise CompileError.from_called_process_exception(e)
-            return CompilationInfo(
-                source_file=Path(code_file),
-                stdout_stderr_output=output.stdout + "\n" + output.stderr,
-            )
 
     def compile_program_to_object(
         self,
@@ -563,8 +528,11 @@ class CompilationSetting:
                 information about the compilation
         """
 
-        return self._compile_program_to_X(
-            program, object_file, ("-c",) + additional_flags, timeout=timeout
+        return self.compile_program(
+            program,
+            CompilationOutput(object_file, CompilationOutputKind.Object),
+            additional_flags,
+            timeout=timeout,
         )
 
     def compile_program_to_executable(
@@ -588,8 +556,11 @@ class CompilationSetting:
         """
 
         # TODO: check/set file permissions of executable_path if it exists?
-        return self._compile_program_to_X(
-            program, executable_path, additional_flags, timeout=timeout
+        return self.compile_program(
+            program,
+            CompilationOutput(executable_path, CompilationOutputKind.Exec),
+            additional_flags,
+            timeout=timeout,
         )
 
     def preprocess_program(
@@ -612,8 +583,11 @@ class CompilationSetting:
 
         """
 
-        return self._compile_program_to_X(
-            program, None, ("-P", "-E") + additional_flags, timeout=timeout
+        return self.compile_program(
+            program,
+            CompilationOutput(Path(""), CompilationOutputKind.Unspecified),
+            ("-P", "-E") + additional_flags,
+            timeout=timeout,
         )
 
 
@@ -751,7 +725,7 @@ class ClangTool:
                     additional_env={"TMPDIR": str(tempfile.gettempdir())},
                 )
             except subprocess.CalledProcessError as e:
-                raise CompileError.from_called_process_exception(e)
+                raise CompileError.from_called_process_exception(" ".join(cmd), e)
 
             match mode:
                 case ClangToolMode.CAPTURE_OUT_ERR:
@@ -835,7 +809,7 @@ class CComp:
         return True
 
 
-def __compiler_settings_parser() -> argparse.ArgumentParser:
+def __compilation_setting_parser() -> argparse.ArgumentParser:
     """Create an ArgumentParser for CompilationSetting.
     Should be integrated with another parser via the `parent`
     constructor argument as it does not create the `help` output
@@ -867,21 +841,21 @@ def __compiler_settings_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def parse_compile_settings_from_string(
+def parse_compilation_setting_from_string(
     s: str,
 ) -> tuple[CompilationSetting, list[str], CompilationOutput]:
-    """Parse the compile settings provided in `s`.
+    """Parse the compilation setting provided in `s`.
 
     Args:
         s (str): compilation command string to be parsed.
 
-     Returns:
+    Returns:
         tuple[CompilationSetting, tuple[str, ...], list[str], CompilationOutput]:
             - CompilationSetting
             - source files provided
             - specified compilation output file and kind
     """
-    parser = __compiler_settings_parser()
+    parser = __compilation_setting_parser()
     parsed_args, rest = parser.parse_known_intermixed_args(
         [p for p in s.replace("-isystem", "--isystem ").split()]
     )
@@ -906,9 +880,13 @@ def parse_compile_settings_from_string(
 
     cexe = CompilerExe.from_path(Path(parsed_args.compiler))
 
+    opt = parsed_args.O
+    if not opt:
+        opt = "O0"
+
     csetting = CompilationSetting(
         compiler=cexe,
-        opt_level=OptLevel.from_str(parsed_args.O),
+        opt_level=OptLevel.from_str(opt),
         include_paths=include_paths,
         system_include_paths=system_include_paths,
         macro_definitions=macro_definitions,
