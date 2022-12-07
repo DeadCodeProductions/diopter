@@ -332,6 +332,35 @@ class CompilationInfo:
     stdout_stderr_output: str
 
 
+class CompilationOutputKind(Enum):
+    Object = 0
+    Assembly = 1
+    Exec = 2
+    Unspecified = 3
+
+    def to_flag(self) -> str:
+        match self:
+            case CompilationOutputKind.Object:
+                return "-c"
+            case CompilationOutputKind.Assembly:
+                return "-S"
+            case CompilationOutputKind.Exec | CompilationOutputKind.Unspecified:
+                return ""
+
+
+@dataclass(frozen=True)
+class CompilationOutput:
+    filename: Path
+    kind: CompilationOutputKind
+
+    def to_flag(self) -> str:
+        if self.kind == CompilationOutputKind.Unspecified:
+            return ""
+        if kind_flag := self.kind.to_flag():
+            return kind_flag + " -o " + str(self.filename)
+        return "-o " + str(self.filename)
+
+
 @dataclass(frozen=True, kw_only=True)
 class CompilationSetting:
     """
@@ -343,11 +372,19 @@ class CompilationSetting:
         opt_level (OptLevel):
             which optimization level to use
         flags (tuple[str,...]):
-            which flags to use when compiling programs
-        include_path (tuple[str,...]):
-            which include paths to pass to the compiler (passed with -I)
+            which flags to use when compiling programs including "dashes" and
+            arguments, e.g., flags = ("-XX", "--foo", "bar")
+        include_paths (tuple[str,...]):
+            which include paths to pass to the compiler (passed to the compiler
+            with -I), e.g., include_paths=tuple("/path/1", "path/2",...)
         system_include_path (tuple[str,...]):
-            which system include paths to pass to the compiler (passed with -isystem)
+            which system include paths to pass to the compiler
+            (passed to the compiler with -isystem) with -I),
+            e.g., include_paths=tuple("/path/1", "path/2",...)
+        macro_definitions (tuple[str,...]):
+            which macro definition to pass to the compiler,
+            without the -D prefix, e.g., macros_defintions = tuple("MACRO1",
+            "MACROWITHARG=1", "MACROWITHARGUMENT=2")
     """
 
     compiler: CompilerExe
@@ -355,7 +392,40 @@ class CompilationSetting:
     flags: tuple[str, ...] = tuple()
     include_paths: tuple[str, ...] = tuple()
     system_include_paths: tuple[str, ...] = tuple()
+    macro_definitions: tuple[str, ...] = tuple()
     # TODO: timeout_s: int = 8
+
+    # XXX: add init to check that flags, paths, macros have the proper form?
+    # i.e., that dashes are there, -I is not etc
+
+    # XXX: support multiple program inputs?
+    def get_compilation_cmd(
+        self,
+        program: SourceProgram,
+        output: CompilationOutput,
+        include_language_flags: bool = True,
+    ) -> list[str]:
+        cmd = list(
+            chain(
+                (
+                    str(self.compiler.exe),
+                    f"-{self.opt_level.name}",
+                ),
+                self.flags,
+                (f"-I{path}" for path in self.include_paths),
+                (f"-isystem{path}" for path in self.system_include_paths),
+                (f"-D{macro}" for macro in self.macro_definitions),
+                program.get_compilation_flags(),
+            )
+        )
+        # TODO: move this to source program?
+        if include_language_flags:
+            cmd.append(program.language.get_language_flag())
+            if output.kind == CompilationOutputKind.Exec:
+                if linker_flag := program.language.get_linker_flag():
+                    cmd.append(linker_flag)
+        cmd.append(output.to_flag())
+        return cmd
 
     def get_compilation_base_cmd(self, program: SourceProgram) -> list[str]:
         """Combines the program's flags with the flags of this compilation
@@ -765,11 +835,14 @@ class CComp:
         return True
 
 
-def compiler_settings_parser() -> argparse.ArgumentParser:
+def __compiler_settings_parser() -> argparse.ArgumentParser:
     """Create an ArgumentParser for CompilationSetting.
     Should be integrated with another parser via the `parent`
     constructor argument as it does not create the `help` output
     itself (otherwise, it would not be composable anymore).
+
+    Note: -isystem is parsed as --isystem with a space after "m" as a
+    workaround, the input to the parser should be adjusted accordingly
 
     Args:
 
@@ -777,43 +850,41 @@ def compiler_settings_parser() -> argparse.ArgumentParser:
         argparse.ArgumentParser:
     """
     # We do not add the help hear so this parser can be extendend or extend another one.
-    parser = argparse.ArgumentParser(add_help=False)
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
 
     parser.add_argument(
         "compiler",
         type=Path,
     )
-    parser.add_argument("-I", action="append")
+    parser.add_argument("-I", type=str, action="append")
     parser.add_argument("-O")
-    parser.add_argument("-isystem", action="append")
+    parser.add_argument("--isystem", type=str, action="append")
     parser.add_argument("-D", action="append")
     parser.add_argument("-o")
-    # XXX: Parsed bug ignored for now (TM)
     parser.add_argument("-c", action="store_true")
     parser.add_argument("-S", action="store_true")
 
     return parser
 
 
-def parse_compile_settings(
-    parsed_args: argparse.Namespace, rest: list[str]
-) -> tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
-    """Parse a CompilationSetting from the provided parsed_args and rest.
-    The parser that yielded `parsed_args` and `rest` must include the
-    `compiler_settings_parser()` as a parent.
+def parse_compile_settings_from_string(
+    s: str,
+) -> tuple[CompilationSetting, list[str], CompilationOutput]:
+    """Parse the compile settings provided in `s`.
 
     Args:
-        parsed_args (argparse.Namespace): Argument namespace
-        rest (list[str]): Unparsed output
+        s (str): compilation command string to be parsed.
 
-    Returns:
-        tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
+     Returns:
+        tuple[CompilationSetting, tuple[str, ...], list[str], CompilationOutput]:
             - CompilationSetting
-            - macros set or unset
             - source files provided
-            - specified output file
+            - specified compilation output file and kind
     """
-
+    parser = __compiler_settings_parser()
+    parsed_args, rest = parser.parse_known_intermixed_args(
+        [p for p in s.replace("-isystem", "--isystem ").split()]
+    )
     CPP_EXT = (".cc", ".cxx", ".cpp")
     C_EXT = (".c",)
 
@@ -840,25 +911,19 @@ def parse_compile_settings(
         opt_level=OptLevel.from_str(parsed_args.O),
         include_paths=include_paths,
         system_include_paths=system_include_paths,
+        macro_definitions=macro_definitions,
         flags=tuple(flags),
     )
-    return csetting, macro_definitions, sources, parsed_args.o
 
+    if parsed_args.o:
+        if parsed_args.c:
+            kind = CompilationOutputKind.Object
+        elif parsed_args.S:
+            kind = CompilationOutputKind.Assembly
+        else:
+            kind = CompilationOutputKind.Exec
+        output = CompilationOutput(parsed_args.o, kind)
+    else:
+        output = CompilationOutput(Path(""), CompilationOutputKind.Unspecified)
 
-def parse_compile_settings_from_string(
-    s: str,
-) -> tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
-    """Parse the compile settings provided in `s`.
-
-    Args:
-        s (str): compilation command string to be parsed.
-
-    Returns:
-        tuple[CompilationSetting, tuple[str, ...], list[str], str | None]:
-            see `parse_compile_settings`.
-    """
-    parser = argparse.ArgumentParser(parents=[compiler_settings_parser()])
-    parsed_args, rest = parser.parse_known_intermixed_args(
-        [p.strip() for p in s.split() if p]
-    )
-    return parse_compile_settings(parsed_args, rest)
+    return csetting, sources, output
