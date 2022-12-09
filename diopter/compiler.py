@@ -79,7 +79,7 @@ class SourceProgram:
         available_macros (tuple[str,...]):
             known macros that can be defined to affect the program's compilation (this
             is not exhaustive, additional, e.g., system macros, might be available)
-        available_macros (tuple[str,...]):
+        defined_macros (tuple[str,...]):
             macros that will be defined when compiling this program
         include_paths (tuple[str,...]):
             include paths which will be passed to the compiler (with -I)
@@ -96,6 +96,23 @@ class SourceProgram:
     include_paths: tuple[str, ...] = tuple()
     system_include_paths: tuple[str, ...] = tuple()
     flags: tuple[str, ...] = tuple()
+
+    def __post_init__(self) -> None:
+        """Sanity checks"""
+
+        # macros should not include "-D"
+        for macro in chain(self.defined_macros, self.available_macros):
+            assert not macro.strip().startswith("-D")
+
+        assert set(self.defined_macros) <= set(self.available_macros)
+
+        # (system) include paths must actually by paths and not include a flag
+        for path in self.include_paths:
+            assert not path.strip().startswith("-I")
+        for path in self.system_include_paths:
+            assert not path.strip().startswith("-isystem")
+
+        # XXX: can't check flags as the args and flags may be split
 
     def get_compilation_flags(self) -> tuple[str, ...]:
         """Returns flags based on the program's flags, include paths and macro defs.
@@ -388,8 +405,20 @@ class CompilationSetting:
     macro_definitions: tuple[str, ...] = tuple()
     # TODO: timeout_s: int = 8
 
-    # XXX: add init to check that flags, paths, macros have the proper form?
-    # i.e., that dashes are there, -I is not etc
+    def __post_init__(self) -> None:
+        """Sanity checks"""
+
+        # macros should not include "-D"
+        for macro in self.macro_definitions:
+            assert not macro.strip().startswith("-D")
+
+        # (system) include paths must actually by paths and not include a flag
+        for path in self.include_paths:
+            assert not path.strip().startswith("-I")
+        for path in self.system_include_paths:
+            assert not path.strip().startswith("-isystem")
+
+        # XXX: can't check flags as the args and flags may be split
 
     def get_compilation_cmd(
         self,
