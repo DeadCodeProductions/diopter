@@ -687,7 +687,6 @@ class ClangTool:
     exe: Path
     standard_c_include_paths: tuple[str, ...]
     standard_cxx_include_paths: tuple[str, ...]
-    timeout_s: int = 8
 
     # TODO: @cache?
     @staticmethod
@@ -710,7 +709,11 @@ class ClangTool:
         )
 
     def run_on_program(
-        self, program: SourceProgram, tool_flags: list[str], mode: ClangToolMode
+        self,
+        program: SourceProgram,
+        tool_flags: list[str],
+        mode: ClangToolMode,
+        timeout: Optional[int] = None,
     ) -> ClangToolResult:
         """Run the clang tool on the input program
 
@@ -722,6 +725,7 @@ class ClangTool:
             mode (ClangToolMode):
                 whether to capture and return stdout & stderr,
                 return the modified source code, or do both
+           timeout (int | None): timeout in seconds
 
         Returns:
             ClangToolResult:
@@ -750,7 +754,7 @@ class ClangTool:
             try:
                 result = run_cmd(
                     cmd,
-                    timeout=self.timeout_s,
+                    timeout=timeout,
                     additional_env={"TMPDIR": str(tempfile.gettempdir())},
                 )
             except subprocess.CalledProcessError as e:
