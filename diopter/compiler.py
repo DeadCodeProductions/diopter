@@ -14,7 +14,7 @@ from types import TracebackType
 # TODO: replace Optinal with | None
 from typing import Optional
 
-from diopter.utils import run_cmd, save_to_tmp_file
+from diopter.utils import run_cmd
 
 
 class Language(Enum):
@@ -309,19 +309,19 @@ class CompileError(Exception):
         return CompileError(output)
 
 
-class TemporarySourceCodeFile:
-    def __init__(self, program: SourceProgram):
-        self.program = program
-        self.fd_code: Optional[int] = None
-        self.code_file: str | None = None
+class TemporaryFile:
+    def __init__(self, *, contents: str, suffix: str):
+        self.contents = contents
+        self.suffix = suffix
+        self.path: str | None = None
 
     def __enter__(self) -> Path:
-        self.fd_code, self.code_file = tempfile.mkstemp(
-            suffix=self.program.language.to_suffix()
-        )
-        with open(self.code_file, "w") as f:
-            f.write(self.program.code)
-        return Path(self.code_file).absolute()
+        fd, self.path = tempfile.mkstemp(suffix=self.suffix)
+        os.close(fd)
+        if self.contents:
+            with open(self.path, "w") as f:
+                f.write(self.contents)
+        return Path(self.path).absolute()
 
     def __exit__(
         self,
@@ -329,11 +329,8 @@ class TemporarySourceCodeFile:
         exc_value: Optional[BaseException],
         exc_traceback: Optional[TracebackType],
     ) -> None:
-        if self.code_file and self.fd_code:
-            os.remove(self.code_file)
-            os.close(self.fd_code)
-        else:
-            raise CompileError("Compiler context exited but was not entered")
+        if self.path and Path(self.path).exists():
+            os.remove(self.path)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -475,7 +472,9 @@ class CompilationSetting:
         timeout: Optional[int] = None,
     ) -> CompilationInfo:
 
-        with TemporarySourceCodeFile(program) as code_file:
+        with TemporaryFile(
+            contents=program.code, suffix=program.get_file_suffix()
+        ) as code_file:
             cmd = self.get_compilation_cmd((program, code_file), output, True) + list(
                 additional_flags
             )
@@ -527,14 +526,14 @@ class CompilationSetting:
             str:
                 assembly code
         """
-        with tempfile.NamedTemporaryFile(suffix=".s") as asm_file:
+        with TemporaryFile(contents="", suffix=".s") as asm_file:
             self.compile_program(
                 program,
-                CompilationOutput(Path(asm_file.name), CompilationOutputKind.Assembly),
+                CompilationOutput(asm_file, CompilationOutputKind.Assembly),
                 additional_flags,
                 timeout,
             )
-            with open(asm_file.name, "r") as f:
+            with open(str(asm_file), "r") as f:
                 return f.read()
 
     def compile_program_to_object(
@@ -636,9 +635,9 @@ def find_standard_include_paths(
         tuple[str,...]:
             the include paths
     """
-    with tempfile.NamedTemporaryFile(suffix=".c" if not cpp else ".cpp") as tf:
+    with TemporaryFile(contents="", suffix=".c" if not cpp else ".cpp") as tf:
         # run clang with verbose output on an empty temporary file
-        cmd = [str(clang.exe), tf.name, "-c", "-o/dev/null", "-v"]
+        cmd = [str(clang.exe), str(tf), "-c", "-o/dev/null", "-v"]
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         assert result.returncode == 0
 
@@ -732,10 +731,10 @@ class ClangTool:
                 captured stdout/stderr and/or modified source code
 
         """
-        with tempfile.NamedTemporaryFile(suffix=program.get_file_suffix()) as tf:
-            with open(tf.name, "w") as f:
-                f.write(program.code)
 
+        with TemporaryFile(
+            contents=program.code, suffix=program.get_file_suffix()
+        ) as tf:
             match program.language:
                 case Language.C:
                     standard_include_paths = self.standard_c_include_paths
@@ -744,7 +743,7 @@ class ClangTool:
 
             cmd = list(
                 chain(
-                    (str(self.exe), tf.name),
+                    (str(self.exe), str(tf)),
                     tool_flags,
                     (f"--extra-arg=-isystem{path}" for path in standard_include_paths),
                     (f"--extra-arg={flag}" for flag in program.get_compilation_flags()),
@@ -768,12 +767,12 @@ class ClangTool:
                         stderr=result.stderr,
                     )
                 case ClangToolMode.READ_MODIFIED_FILE:
-                    with open(tf.name, "r") as f:
+                    with open(str(tf), "r") as f:
                         return ClangToolResult(
                             modified_source_code=f.read(), stdout=None, stderr=None
                         )
                 case ClangToolMode.CAPTURE_OUT_ERR_AND_READ_MODIFIED_FILED:
-                    with open(tf.name, "r") as f:
+                    with open(str(tf), "r") as f:
                         return ClangToolResult(
                             modified_source_code=f.read(),
                             stdout=result.stdout,
@@ -817,29 +816,32 @@ class CComp:
             bool:
                 was the check successful?
         """
-        tf = save_to_tmp_file(program.code, suffix=program.language.to_suffix())
-        cmd = (
-            [
-                str(self.exe),
-                str(tf.name),
-                "-interp",
-                "-fall",
-            ]
-            + [
-                f"-I{ipath}"
-                for ipath in chain(program.include_paths, program.system_include_paths)
-            ]
-            + [f"-D{macro}" for macro in program.defined_macros]
-        )
-        try:
-            run_cmd(
-                cmd,
-                additional_env={"TMPDIR": str(tempfile.gettempdir())},
-                timeout=timeout,
+        assert program.language == Language.C
+        with TemporaryFile(contents=program.code, suffix=".c") as tf:
+            cmd = (
+                [
+                    str(self.exe),
+                    str(tf.name),
+                    "-interp",
+                    "-fall",
+                ]
+                + [
+                    f"-I{ipath}"
+                    for ipath in chain(
+                        program.include_paths, program.system_include_paths
+                    )
+                ]
+                + [f"-D{macro}" for macro in program.defined_macros]
             )
-        except subprocess.CalledProcessError:
-            return False
-        return True
+            try:
+                run_cmd(
+                    cmd,
+                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                    timeout=timeout,
+                )
+            except subprocess.CalledProcessError:
+                return False
+            return True
 
 
 def __compilation_setting_parser() -> argparse.ArgumentParser:

@@ -8,7 +8,7 @@ from diopter.compiler import (
     Language,
     OptLevel,
     SourceProgram,
-    TemporarySourceCodeFile,
+    TemporaryFile,
 )
 from diopter.utils import run_cmd
 
@@ -27,7 +27,7 @@ def test_get_asm_from_program() -> None:
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2, flags=("-m32",))
     asm = cs.get_asm_from_program(program)
 
-    with TemporarySourceCodeFile(program) as f:
+    with TemporaryFile(contents=program.code, suffix=program.get_file_suffix()) as f:
         result = run_cmd(f"gcc {f} -mno-red-zone -o /dev/stdout -O2 -m32 -S")
         asm_manual = result.stdout
 
@@ -53,7 +53,7 @@ def test_compile_to_object() -> None:
     with open("/tmp/test1.o", "rb") as f:
         object1 = f.read()
 
-    with TemporarySourceCodeFile(program) as f:
+    with TemporaryFile(contents=program.code, suffix=program.get_file_suffix()) as f:
         cmd = f"gcc {f} -o /tmp/test2.o -O2 -c"
         run_cmd(cmd)
 
@@ -80,7 +80,7 @@ def test_compile_to_object_cpp() -> None:
     with open("/tmp/test1.o", "rb") as f:
         object1 = f.read()
 
-    with TemporarySourceCodeFile(program) as f:
+    with TemporaryFile(contents=program.code, suffix=program.get_file_suffix()) as f:
         cmd = f"g++ {f} -o /tmp/test2.o -O2 -c"
         run_cmd(cmd)
 
@@ -105,7 +105,7 @@ def test_compile_to_exec() -> None:
     with open("/tmp/test1.exe", "rb") as f:
         exe1 = f.read()
 
-    with TemporarySourceCodeFile(program) as f:
+    with TemporaryFile(contents=program.code, suffix=program.get_file_suffix()) as f:
         cmd = f"gcc {f} -o /tmp/test2.exe -O2 "
         run_cmd(cmd)
 
