@@ -151,7 +151,6 @@ class CSmithGenerator(Generator):
         return SourceProgram(
             code=result.stdout.decode("utf-8"),
             language=Language.C,
-            available_macros=(),
             defined_macros=(),
             include_paths=(),
             system_include_paths=(self.include_path,),
