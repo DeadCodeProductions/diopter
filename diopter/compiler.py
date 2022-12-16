@@ -76,9 +76,6 @@ class SourceProgram:
             the source code
         language (Language):
             the program's language
-        available_macros (tuple[str,...]):
-            known macros that can be defined to affect the program's compilation (this
-            is not exhaustive, additional, e.g., system macros, might be available)
         defined_macros (tuple[str,...]):
             macros that will be defined when compiling this program
         include_paths (tuple[str,...]):
@@ -91,7 +88,6 @@ class SourceProgram:
 
     code: str
     language: Language
-    available_macros: tuple[str, ...] = tuple()
     defined_macros: tuple[str, ...] = tuple()
     include_paths: tuple[str, ...] = tuple()
     system_include_paths: tuple[str, ...] = tuple()
@@ -100,11 +96,8 @@ class SourceProgram:
     def __post_init__(self) -> None:
         """Sanity checks"""
 
-        # macros should not include "-D"
-        for macro in chain(self.defined_macros, self.available_macros):
+        for macro in self.defined_macros:
             assert not macro.strip().startswith("-D")
-
-        assert set(self.defined_macros) <= set(self.available_macros)
 
         # (system) include paths must actually by paths and not include a flag
         for path in self.include_paths:
