@@ -1,7 +1,6 @@
 import subprocess
 from abc import ABC, abstractmethod
-from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
-from multiprocessing import cpu_count
+from concurrent.futures import Executor, Future, wait
 from random import randint
 from typing import Iterator, Optional
 
@@ -40,28 +39,40 @@ class Generator(ABC):
                 return program
 
     def generate_programs_parallel(
-        self, n: int, e: Optional[Executor] = None, jobs: Optional[int] = None
-    ) -> Iterator[SourceProgram]:
+        self, n: int, executor: Executor, max_parallel_jobs: int = 1024
+    ) -> Iterator[Future[SourceProgram]]:
         """
+        Generate programs in parallel. Yield futures wrapping the generation
+        jobs.
+
+        Example:
+        with ProcessPoolExecutor(16) as executor:
+            for fut in generator.generate_programs_parallel(100, executor):
+                program = fut.result()
+
         Args:
-            n (int): how many cases to generate
-            e (Optional[Executor]): executor used for running the code generation jobs
-            jobs (Optional[int]):
-                number of jobs, if None cpu_count() is used (ignored if e is not None)
+            n (int):
+                how many cases to generate
+            executor (Executor):
+                executor used for running the code generation jobs
+            max_parallel_jobs (int):
+                Maximum number of jobs to be submitted concurrently. This
+                is a workaround for deadlocking issues with ProcessPoolExecutor.
+                If n > max_parallel_jobs then jobs will be submitted in chunks
+                of max_parallel_jobs.
         Returns:
-            Iterator[SourceProgram]: the generated programs
+            Iterator[Future[SourceProgram]]: the generated program futures
         """
-
-        def make_futures(e: Executor) -> Iterator[SourceProgram]:
-            futures = (e.submit(self.generate_program) for _ in range(n))
-            for future in as_completed(futures):
-                yield future.result()
-
-        if e:
-            yield from make_futures(e)
-        else:
-            with ProcessPoolExecutor(jobs if jobs else cpu_count()) as p:
-                yield from make_futures(p)
+        remaining = n
+        while True:
+            futures = []
+            for _ in range(min(max_parallel_jobs, remaining)):
+                futures.append(executor.submit(self.generate_program))
+                yield futures[-1]
+            remaining -= len(futures)
+            if not remaining:
+                return
+            wait(futures)
 
 
 class CSmithGenerator(Generator):
