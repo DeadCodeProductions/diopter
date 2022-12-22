@@ -314,7 +314,7 @@ class TemporaryFile:
         if self.contents:
             with open(self.path, "w") as f:
                 f.write(self.contents)
-        return Path(self.path).absolute()
+        return Path(self.path).resolve(strict=True)
 
     def __exit__(
         self,
@@ -794,7 +794,7 @@ class CComp:
         ccomp = which("ccomp")
         if not ccomp:
             return None
-        return CComp(exe=Path(ccomp).absolute())
+        return CComp(exe=Path(ccomp).resolve(strict=True))
 
     def check_program(
         self, program: SourceProgram, timeout: Optional[int] = None
@@ -814,7 +814,7 @@ class CComp:
             cmd = (
                 [
                     str(self.exe),
-                    str(tf.name),
+                    str(tf),
                     "-interp",
                     "-fall",
                 ]
