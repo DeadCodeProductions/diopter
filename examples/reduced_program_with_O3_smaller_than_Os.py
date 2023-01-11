@@ -36,21 +36,18 @@ def filter(
 class ReduceObjectSize(ReductionCallback):
     def __init__(
         self,
-        program: SourceProgram,
         san: Sanitizer,
         O3: CompilationSetting,
         Os: CompilationSetting,
     ):
-        self.program = program
         self.san = san
         self.O3 = O3
         self.Os = Os
 
-    def test(self, code: str) -> bool:
-        p = self.program.with_code(code)
-        if not self.san.sanitize(p):
+    def test(self, program: SourceProgram) -> bool:
+        if not self.san.sanitize(program):
             return False
-        return filter(p, self.O3, self.Os)
+        return filter(program, self.O3, self.Os)
 
 
 if __name__ == "__main__":
@@ -76,8 +73,7 @@ if __name__ == "__main__":
             break
     print(f"O3 size: {get_size(p, O3)}")
     print(f"Os size: {get_size(p, Os)}")
-    rcode = Reducer().reduce(p.code, ReduceObjectSize(p, sanitizer, O3, Os))
-    assert rcode
-    p = p.with_code(rcode)
-    print(f"O3 size: {get_size(p, O3)}")
-    print(f"Os size: {get_size(p, Os)}")
+    rprogram = Reducer().reduce(p, ReduceObjectSize(sanitizer, O3, Os))  # , debug=True)
+    assert rprogram
+    print(f"O3 size: {get_size(rprogram, O3)}")
+    print(f"Os size: {get_size(rprogram, Os)}")
