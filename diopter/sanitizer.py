@@ -80,8 +80,10 @@ class Sanitizer:
             the warnings whose presence to check
         use_ub_address_sanitizer (bool):
             whether Sanitizer.sanitize should use clang's ub and address sanitizers
-        check_warnings_and_sanitizer_opt_level (OptLevel):
-            optimization level used when checking for warnings and running sanitizers
+        check_warnings_opt_level (OptLevel):
+            optimization level used when checking for warnings
+        sanitizer_opt_level (OptLevel):
+            optimization level used when running sanitizers
         compilation_timeout (int):
             seconds to wait before aborting when compiling the program
         execution_timeout (int):
@@ -128,6 +130,7 @@ class Sanitizer:
         "return type of ‘main’ is not ‘int’",
         "past the end of the array",
         "no return statement in function returning non-void",
+        "undefined behavior",
     )
 
     def __init__(
@@ -139,7 +142,8 @@ class Sanitizer:
         gcc: Optional[CompilerExe] = None,
         clang: Optional[CompilerExe] = None,
         ccomp: Optional[CComp] = None,
-        check_warnings_and_sanitizer_opt_level: OptLevel = OptLevel.O3,
+        check_warnings_opt_level: OptLevel = OptLevel.O3,
+        sanitizer_opt_level: OptLevel = OptLevel.O0,
         checked_warnings: Optional[tuple[str, ...]] = None,
         compilation_timeout: int = 8,
         execution_timeout: int = 4,
@@ -163,9 +167,12 @@ class Sanitizer:
             ccomp (Optional[CComp]:
                 the ccomp executable to use, if not provided and use_ccomp
                 is True CComp.get_system_ccomp will be used if available
-            check_warnings_and_sanitizer_opt_level (OptLevel):
-                which optimization level to use when checking for compiler
-                warnings and ub/address sanitizer issues
+            check_warnings_opt_level (OptLevel):
+                which optimization level to use when checking
+                for compiler warnings
+            sanitizer_opt_level (OptLevel):
+                which optimization level to use when checking
+                for ub/address sanitizer issues
             checked_warnings (Optional[tuple[str,...]]):
                 if not None implies check_warnings = True and will
                 be used instead of Sanitizer.default_warnings
@@ -187,9 +194,8 @@ class Sanitizer:
         elif check_warnings:
             self.checked_warnings = Sanitizer.default_warnings
         self.use_ub_address_sanitizer = use_ub_address_sanitizer
-        self.check_warnings_and_sanitizer_opt_level = (
-            check_warnings_and_sanitizer_opt_level
-        )
+        self.check_warnings_opt_level = check_warnings_opt_level
+        self.sanitizer_opt_level = sanitizer_opt_level
         self.compilation_timeout = compilation_timeout
         self.execution_timeout = execution_timeout
         self.ccomp_timeout = ccomp_timeout
@@ -238,7 +244,7 @@ class Sanitizer:
                 gcc_result := check_warnings_impl(
                     CompilationSetting(
                         compiler=self.gcc,
-                        opt_level=self.check_warnings_and_sanitizer_opt_level,
+                        opt_level=self.check_warnings_opt_level,
                     )
                 )
             ):
@@ -247,7 +253,7 @@ class Sanitizer:
                 clang_result := check_warnings_impl(
                     CompilationSetting(
                         compiler=self.clang,
-                        opt_level=self.check_warnings_and_sanitizer_opt_level,
+                        opt_level=self.check_warnings_opt_level,
                     )
                 )
             ):
@@ -281,7 +287,7 @@ class Sanitizer:
             try:
                 CompilationSetting(
                     compiler=self.clang,
-                    opt_level=self.check_warnings_and_sanitizer_opt_level,
+                    opt_level=self.sanitizer_opt_level,
                 ).compile_program_to_executable(
                     program,
                     Path(exe.name),
