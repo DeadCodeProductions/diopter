@@ -5,32 +5,46 @@ import pickle
 import subprocess
 import sys
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from multiprocessing import cpu_count
 from pathlib import Path
 from shutil import which
 from sys import stderr
 from typing import Optional, TextIO
 
+from diopter.compiler import SourceProgram
 from diopter.utils import TempDirEnv, run_cmd_to_logfile
 
 
 class ReductionCallback(ABC):
     @abstractmethod
-    def test(self, code: str) -> bool:
+    def test(self, program: SourceProgram) -> bool:
         pass
 
 
 def emit_module_imports(reduction_callback: ReductionCallback) -> str:
+    """Generates all the necessary imports for the reduction script.
+
+    Other than some stantand imports (e.g., pickle) it imports all the
+    modules necessary to deserialize and run the `reduction_callback`
+    """
+
+    # Figure out the callback import:
+    # from callback_module import callback_name
     callback_name = type(reduction_callback).__name__
     callback_module_path = inspect.getsourcefile(type(reduction_callback))
     assert callback_module_path
     callback_module = inspect.getmodulename(callback_module_path)
+
+    # Also import all visible modules, this ensures that the callback
+    # can be properly deserialized (pickle.load'ed) and run
     sys_path_append = "".join(f'\nsys.path.append("{p}")' for p in sys.path)
 
     return f"""import importlib
 import pickle
 import sys
 from pathlib import Path
+from dataclasses import replace
 sys.path.insert(0, "{str(Path(callback_module_path).parent)}")
 {sys_path_append}
 
@@ -38,20 +52,37 @@ from {callback_module} import {callback_name}
 """
 
 
-def emit_call(reduction_callback: ReductionCallback, code_filename: str) -> str:
-    callback_in_hex = pickle.dumps(reduction_callback).hex()
-    callback_load = f'callback = pickle.loads(bytes.fromhex("{callback_in_hex}"))'
+def emit_call(
+    reduction_callback: ReductionCallback, program: SourceProgram, code_filename: str
+) -> str:
+    """
+    Emits the call in the reduction script.
 
-    call = "exit(not callback.test(code))"
+    Serializes both the original program and the reduction call back in hex strings.
+    These strings are embedded in the reduction script which pickle.load's them.
+
+    Returns code that loads the callback and the program, reads the new code,
+    and runs the callback on loaded program with the code replaced.
+    """
+    callback_in_hex = pickle.dumps(reduction_callback).hex()
+    program_in_hex = pickle.dumps(program).hex()
+
+    callback_load = f'callback = pickle.loads(bytes.fromhex("{callback_in_hex}"))'
+    program_load = f'program = pickle.loads(bytes.fromhex("{program_in_hex}"))'
+
+    call = "exit(not callback.test(program))"
+
     return f"""with open(\"{code_filename}\", \"r\") as f:
     code = f.read()
+{program_load}
+program = replace(program, code=code)
 {callback_load}
 {call}
     """
 
 
 def make_interestingness_script(
-    reduction_callback: ReductionCallback, code_filename: str
+    reduction_callback: ReductionCallback, program: SourceProgram, code_filename: str
 ) -> str:
     """
     Helper function to create a script useful for use with diopter.Reducer.
@@ -61,6 +92,8 @@ def make_interestingness_script(
     Args:
         reduction_callback:
             callback that will be serialized stored as a runnable script
+        program:
+            the original program
         code_filename:
             file that the generated script will check everytime it is run
 
@@ -72,7 +105,7 @@ def make_interestingness_script(
         (
             prologue,
             emit_module_imports(reduction_callback),
-            emit_call(reduction_callback, code_filename),
+            emit_call(reduction_callback, program, code_filename),
         )
     )
 
@@ -93,18 +126,18 @@ class Reducer:
 
     def reduce(
         self,
-        code: str,
+        program: SourceProgram,
         interestingness_test: ReductionCallback,
         jobs: Optional[int] = None,
         log_file: Optional[TextIO] = None,
         debug: bool = False,
-    ) -> Optional[str]:
+    ) -> Optional[SourceProgram]:
         """
         Reduce given code
 
         Args:
-            code:
-                the code to reduce
+            program:
+                the program to reduce
             interestingness_test:
                 a concrete ReductionCallback that implementes the interestingness
                 (can be generated with make_interestingness_check).
@@ -116,12 +149,14 @@ class Reducer:
                 Whether to pass the debug flag to creduce
 
         Returns:
-            Reduced code, if successful.
+            Reduced program, if successful.
         """
         creduce_jobs = jobs if jobs else cpu_count()
 
+        code_filename = "code" + program.language.to_suffix()
+
         interestingness_script = make_interestingness_script(
-            interestingness_test, "code.c"
+            interestingness_test, program, code_filename
         )
 
         # creduce likes to kill unfinished processes with SIGKILL
@@ -130,9 +165,9 @@ class Reducer:
         # up everything
         with TempDirEnv() as tmpdir:
 
-            code_file = tmpdir / "code.c"
+            code_file = tmpdir / code_filename
             with open(code_file, "w") as f:
-                f.write(code)
+                f.write(program.code)
 
             script_path = tmpdir / "check.py"
             with open(script_path, "w") as f:
@@ -163,4 +198,4 @@ class Reducer:
             with open(code_file, "r") as f:
                 reduced_code = f.read()
 
-            return reduced_code
+            return replace(program, code=reduced_code)
