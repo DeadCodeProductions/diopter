@@ -811,7 +811,11 @@ class CComp:
                 was the check successful?
         """
         assert program.language == Language.C
-        with TemporaryFile(contents=program.code, suffix=".c") as tf:
+
+        # ccomp doesn't like these
+        code = re.sub(r"__asm__ [^\)]*\)", r"", program.code)
+
+        with TemporaryFile(contents=code, suffix=".c") as tf:
             cmd = (
                 [
                     str(self.exe),
