@@ -797,13 +797,14 @@ class CComp:
         return CComp(exe=Path(ccomp).resolve(strict=True))
 
     def check_program(
-        self, program: SourceProgram, timeout: Optional[int] = None
+        self, program: SourceProgram, timeout: Optional[int] = None, debug: bool = False
     ) -> bool:
         """Checks the input program for errors using ccomp's interpreter mode.
 
         Args:
            program (SourceProgram): the input program
            timeout (int | None): timeout in seconds for the checking
+           debug (bool): if true ccomp's output will be printed on failure
 
         Returns:
             bool:
@@ -832,7 +833,9 @@ class CComp:
                     additional_env={"TMPDIR": str(tempfile.gettempdir())},
                     timeout=timeout,
                 )
-            except subprocess.CalledProcessError:
+            except subprocess.CalledProcessError as e:
+                if debug:
+                    print(CompileError.from_called_process_exception(" ".join(cmd), e))
                 return False
             return True
 

@@ -262,8 +262,7 @@ class Sanitizer:
         return SanitizationResult()
 
     def check_for_ub_and_address_sanitizer_errors(
-        self,
-        program: SourceProgram,
+        self, program: SourceProgram, debug: bool = False
     ) -> SanitizationResult:
         """Checks the program for UB and address sanitizer errors.
 
@@ -273,7 +272,8 @@ class Sanitizer:
         Args:
             program (SourceProgram):
                 The program to check.
-
+            debug (bool):
+                If true, additional info will be printed in case of failure
         Returns:
             SanitizationResult:
                 whether the program failed sanitization or not.
@@ -302,7 +302,9 @@ class Sanitizer:
                 )
             except subprocess.TimeoutExpired:
                 return SanitizationResult(timeout=True)
-            except CompileError:
+            except CompileError as e:
+                if debug:
+                    print(e)
                 return SanitizationResult(ub_address_sanitizer_failed=True)
 
             # Run the instrumented binary
@@ -310,12 +312,15 @@ class Sanitizer:
                 run_cmd(exe.name, timeout=self.execution_timeout)
             except subprocess.TimeoutExpired:
                 return SanitizationResult(timeout=True)
-            except subprocess.CalledProcessError:
+            except subprocess.CalledProcessError as e:
+                if debug:
+                    print(e.stdout)
+                    print(e.stderr)
                 return SanitizationResult(ub_address_sanitizer_failed=True)
             return SanitizationResult()
 
     def check_for_ccomp_errors(
-        self, program: SourceProgram
+        self, program: SourceProgram, debug: bool = False
     ) -> Optional[SanitizationResult]:
         """Checks the program with self.ccomp if available.
 
@@ -325,6 +330,8 @@ class Sanitizer:
         Args:
             program (SourceProgram):
                 The program to check.
+            debug (bool):
+                If true, additional info will be printed in case of failure
 
         Returns:
             Optional[SanitizationResult]:
@@ -335,14 +342,18 @@ class Sanitizer:
             return None
         with TempDirEnv():
             try:
-                if not self.ccomp.check_program(program, timeout=self.ccomp_timeout):
+                if not self.ccomp.check_program(
+                    program, timeout=self.ccomp_timeout, debug=debug
+                ):
                     return SanitizationResult(ccomp_failed=True)
             except subprocess.TimeoutExpired:
                 return SanitizationResult(timeout=True)
 
             return SanitizationResult()
 
-    def sanitize(self, program: SourceProgram) -> SanitizationResult:
+    def sanitize(
+        self, program: SourceProgram, debug: bool = False
+    ) -> SanitizationResult:
         """Runs all the enabled sanitization checks.
 
         Runs all available sanitization checks based on self.checked_warnings,
@@ -352,6 +363,8 @@ class Sanitizer:
         Args:
             program (SourceProgram):
                 The program to check.
+            debug (bool):
+                If true, additional info will be printed in case of failure
 
         Returns:
             SanitizationResult:
@@ -364,11 +377,15 @@ class Sanitizer:
             return check_warnings_result
 
         if self.use_ub_address_sanitizer and not (
-            sanitizer_result := self.check_for_ub_and_address_sanitizer_errors(program)
+            sanitizer_result := self.check_for_ub_and_address_sanitizer_errors(
+                program, debug=debug
+            )
         ):
             return sanitizer_result
 
-        if self.ccomp and not (ccomp_result := self.check_for_ccomp_errors(program)):
+        if self.ccomp and not (
+            ccomp_result := self.check_for_ccomp_errors(program, debug)
+        ):
             assert ccomp_result is not None
             return ccomp_result
 
