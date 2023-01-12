@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, replace
@@ -587,28 +588,53 @@ class CompilationSetting:
     def preprocess_program(
         self,
         program: SourceProgram,
+        make_compiler_agnostic: bool = False,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: Optional[int] = None,
-    ) -> CompilationInfo:
+    ) -> SourceProgram:
         """Preprocesses the program
 
         Args:
            program (SourceProgram): input program
            additional_flags (tuple[str, ...]): additional flags used for the compilation
+           make_compiler_agnostic (bool):
+               if true will try to remove certain constructs (e.g., attributes)
+               such that the resulting program can be compiled with both gcc and clang
            timeout (int | None): timeout in seconds for the compilation command
 
         Returns:
-            CompilationInfo:
-                information about the compilation, the
-                preprocessing result is stored in the output
+            Source:
+                the prepocessed program
 
         """
 
-        return self.compile_program(
+        preprocessed_source = self.compile_program(
             program,
             CompilationOutput(Path(""), CompilationOutputKind.Unspecified),
             ("-P", "-E") + additional_flags,
             timeout=timeout,
+        ).stdout_stderr_output
+
+        if make_compiler_agnostic:
+            # remove malloc attributes with args, clang doesn't understand these
+            preprocessed_source = re.sub(
+                r"__attribute__ \(\(__malloc__ \(.*, .*\)\)\)", r"", preprocessed_source
+            )
+            # remove f128 builtins builtins, clang doesn't understand these
+            preprocessed_source = re.sub(
+                r"extern int [^;]*f128[^;]*;", r"", preprocessed_source
+            )
+            # remove Float*** typedefs, gcc doesn't like these
+            preprocessed_source = re.sub(
+                r"typedef [^;]*_Float\d+x?;", r"", preprocessed_source
+            )
+
+        return replace(
+            program,
+            code=preprocessed_source,
+            defined_macros=tuple(),
+            include_paths=tuple(),
+            system_include_paths=tuple(),
         )
 
 

@@ -10,7 +10,6 @@ from tempfile import NamedTemporaryFile
 
 from diopter.compiler import CompilationSetting, CompilerExe, OptLevel, SourceProgram
 from diopter.generator import CSmithGenerator
-from diopter.preprocessor import preprocess_csmith_program
 from diopter.reducer import Reducer, ReductionCallback
 from diopter.sanitizer import Sanitizer
 from diopter.utils import run_cmd
@@ -64,11 +63,7 @@ if __name__ == "__main__":
     sanitizer = Sanitizer()
     while True:
         p = CSmithGenerator(sanitizer).generate_program()
-        preprocessed = preprocess_csmith_program(p, CompilerExe.get_system_gcc())
-        if not preprocessed:
-            print("Failed preprocessing")
-            continue
-        p = preprocessed
+        p = Os.preprocess_program(p, make_compiler_agnostic=True)
         if filter(p, O3, Os):
             break
     print(f"O3 size: {get_size(p, O3)}")
