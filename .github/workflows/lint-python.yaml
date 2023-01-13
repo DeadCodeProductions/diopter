@@ -43,7 +43,10 @@ jobs:
           sudo apt install creduce csmith libcsmith-dev -y
           python -m pip install . pytest
       - name: Run tests
-        run: python -m pytest tests
+        run: |
+          git config --global user.email "test@test.test"
+          git config --global user.name "test"
+          python -m pytest tests
   isort:
       runs-on: ubuntu-latest
       steps:
