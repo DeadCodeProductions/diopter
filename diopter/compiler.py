@@ -911,7 +911,7 @@ def parse_compilation_setting_from_string(
         s (str): compilation command string to be parsed.
 
     Returns:
-        tuple[CompilationSetting, tuple[str, ...], list[str], CompilationOutput]:
+        tuple[CompilationSetting, list[str], CompilationOutput]:
             - CompilationSetting
             - source files provided
             - specified compilation output file and kind
