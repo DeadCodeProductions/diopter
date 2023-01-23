@@ -135,6 +135,17 @@ class SourceProgram:
 
         return self.language.to_suffix()
 
+    def get_modified_code(self) -> str:
+        """Returns `self.code` potentially modified to be used in `CompilationSetting`.
+
+        Subclasses of `SourceProgram` can modify override this method.
+
+        Returns:
+            str:
+                the (modified) `self.code`
+        """
+        return self.code
+
     def with_code(self, new_code: str) -> SourceProgram:
         """Returns a new program with its code replaced with new_code
 
@@ -467,7 +478,7 @@ class CompilationSetting:
     ) -> CompilationInfo:
 
         with TemporaryFile(
-            contents=program.code, suffix=program.get_file_suffix()
+            contents=program.get_modified_code(), suffix=program.get_file_suffix()
         ) as code_file:
             cmd = self.get_compilation_cmd((program, code_file), output, True) + list(
                 additional_flags
@@ -752,7 +763,7 @@ class ClangTool:
         """
 
         with TemporaryFile(
-            contents=program.code, suffix=program.get_file_suffix()
+            contents=program.get_modified_code(), suffix=program.get_file_suffix()
         ) as tf:
             match program.language:
                 case Language.C:
@@ -839,7 +850,7 @@ class CComp:
         assert program.language == Language.C
 
         # ccomp doesn't like these
-        code = re.sub(r"__asm__ [^\)]*\)", r"", program.code)
+        code = re.sub(r"__asm__ [^\)]*\)", r"", program.get_modified_code())
 
         with TemporaryFile(contents=code, suffix=".c") as tf:
             cmd = (
