@@ -11,6 +11,7 @@ from itertools import chain
 from pathlib import Path
 from shutil import which
 from types import TracebackType
+from typing import TypeVar
 
 from diopter.utils import run_cmd
 
@@ -63,6 +64,9 @@ class Language(Enum):
                 return ".c"
             case Language.CPP:
                 return ".cpp"
+
+
+ProgramType = TypeVar("ProgramType", bound="SourceProgram")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -143,14 +147,16 @@ class SourceProgram:
         """
         return self.code
 
-    def with_preprocessed_code(self, preprocessed_code: str) -> SourceProgram:
+    def with_preprocessed_code(
+        self: ProgramType, preprocessed_code: str
+    ) -> ProgramType:
         """Returns a new program with its code replaced with `preprocessed_code`
 
         `CompilerSetting.preprocess_program` calls this. It can be overriden by
         subclasses.
 
         Returns:
-            SourceProgram:
+            ProgramType:
                 the new program
         """
         return replace(
@@ -161,11 +167,11 @@ class SourceProgram:
             system_include_paths=tuple(),
         )
 
-    def with_code(self, new_code: str) -> SourceProgram:
+    def with_code(self: ProgramType, new_code: str) -> ProgramType:
         """Returns a new program with its code replaced with new_code
 
         Returns:
-            SourceProgram:
+            ProgramType:
                 the new program
         """
         return replace(self, code=new_code)
@@ -439,7 +445,7 @@ class CompilationSetting:
 
     def get_compilation_cmd(
         self,
-        program: tuple[SourceProgram, Path],
+        program: tuple[ProgramType, Path],
         output: CompilationOutput,
         include_language_flags: bool = True,
     ) -> list[str]:
@@ -447,8 +453,8 @@ class CompilationSetting:
         input programs and the output.
 
         Args:
-            program (tuple[SourceProgram, Path]):
-                flags from the SourcePrograms are extracted and
+            program (tuple[ProgramType, Path]):
+                flags from the program are extracted and
                 the corresponding path are included in the output
             output (CompilationOutput):
                 the output path and potentially additional flags
@@ -486,7 +492,7 @@ class CompilationSetting:
 
     def compile_program(
         self,
-        program: SourceProgram,
+        program: ProgramType,
         output: CompilationOutput,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
@@ -514,14 +520,14 @@ class CompilationSetting:
             )
 
     def get_llvm_ir_from_program(
-        self, program: SourceProgram, timeout: int | None = None
+        self, program: ProgramType, timeout: int | None = None
     ) -> str:
         """Extracts LLVM-IR from the program.
 
         This only works with LLVM compilers.
 
         Args:
-           program (SourceProgram): input program
+           program (ProgramType): input program
            timeout (int | None): timeout in seconds for the compilation command
         Returns:
             str:
@@ -531,14 +537,14 @@ class CompilationSetting:
 
     def get_asm_from_program(
         self,
-        program: SourceProgram,
+        program: ProgramType,
         additional_flags: tuple[str, ...] = (),
         timeout: int | None = None,
     ) -> str:
         """Extracts assembly code from the program.
 
         Args:
-           program (SourceProgram): input program
+           program (ProgramType): input program
            additional_flags (tuple[str, ...]): additional flags used for the compilation
            timeout (int | None): timeout in seconds for the compilation command
 
@@ -558,7 +564,7 @@ class CompilationSetting:
 
     def compile_program_to_object(
         self,
-        program: SourceProgram,
+        program: ProgramType,
         object_file: Path,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
@@ -566,7 +572,7 @@ class CompilationSetting:
         """Compiles program to object file
 
         Args:
-           program (SourceProgram): input program
+           program (ProgramType): input program
            object_file (Path): path to the output
            additional_flags (tuple[str, ...]): additional flags used for the compilation
            timeout (int | None): timeout in seconds for the compilation command
@@ -585,7 +591,7 @@ class CompilationSetting:
 
     def compile_program_to_executable(
         self,
-        program: SourceProgram,
+        program: ProgramType,
         executable_path: Path,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
@@ -593,7 +599,7 @@ class CompilationSetting:
         """Compiles program to object file
 
         Args:
-           program (SourceProgram): input program
+           program (ProgramType): input program
            executable_file (Path): path to the output
            additional_flags (tuple[str, ...]): additional flags used for the compilation
            timeout (int | None): timeout in seconds for the compilation command
@@ -613,15 +619,15 @@ class CompilationSetting:
 
     def preprocess_program(
         self,
-        program: SourceProgram,
+        program: ProgramType,
         make_compiler_agnostic: bool = False,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
-    ) -> SourceProgram:
+    ) -> ProgramType:
         """Preprocesses the program
 
         Args:
-           program (SourceProgram): input program
+           program (ProgramType): input program
            additional_flags (tuple[str, ...]): additional flags used for the compilation
            make_compiler_agnostic (bool):
                if true will try to remove certain constructs (e.g., attributes)
