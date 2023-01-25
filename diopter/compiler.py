@@ -138,13 +138,31 @@ class SourceProgram:
     def get_modified_code(self) -> str:
         """Returns `self.code` potentially modified to be used in `CompilationSetting`.
 
-        Subclasses of `SourceProgram` can modify override this method.
+        Subclasses of `SourceProgram` can override this method.
 
         Returns:
             str:
                 the (modified) `self.code`
         """
         return self.code
+
+    def with_preprocessed_code(self, preprocessed_code: str) -> SourceProgram:
+        """Returns a new program with its code replaced with `preprocessed_code`
+
+        `CompilerSetting.preprocess_program` calls this. It can be overriden by
+        subclasses.
+
+        Returns:
+            SourceProgram:
+                the new program
+        """
+        return replace(
+            self,
+            code=preprocessed_code,
+            defined_macros=tuple(),
+            include_paths=tuple(),
+            system_include_paths=tuple(),
+        )
 
     def with_code(self, new_code: str) -> SourceProgram:
         """Returns a new program with its code replaced with new_code
@@ -640,13 +658,7 @@ class CompilationSetting:
                 r"typedef [^;]*_Float\d+x?;", r"", preprocessed_source
             )
 
-        return replace(
-            program,
-            code=preprocessed_source,
-            defined_macros=tuple(),
-            include_paths=tuple(),
-            system_include_paths=tuple(),
-        )
+        return program.with_preprocessed_code(preprocessed_source)
 
 
 def find_standard_include_paths(
