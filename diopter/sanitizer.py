@@ -18,7 +18,6 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from diopter.compiler import (
     CComp,
@@ -74,9 +73,9 @@ class Sanitizer:
             gcc used for checking compiler warnings
         clang (CompilerExe):
             clang used for checking compiler warnings and ub/address sanitizers result
-        ccomp (Optional[CComp]):
+        ccomp (CComp | None):
             CompCert used for validating the program
-        checked_warnings (Optional[tuple[str,...]]):
+        checked_warnings (tuple[str,...] | None):
             the warnings whose presence to check
         use_ub_address_sanitizer (bool):
             whether Sanitizer.sanitize should use clang's ub and address sanitizers
@@ -139,12 +138,12 @@ class Sanitizer:
         check_warnings: bool = True,
         use_ub_address_sanitizer: bool = True,
         use_ccomp_if_available: bool = True,
-        gcc: Optional[CompilerExe] = None,
-        clang: Optional[CompilerExe] = None,
-        ccomp: Optional[CComp] = None,
+        gcc: CompilerExe | None = None,
+        clang: CompilerExe | None = None,
+        ccomp: CComp | None = None,
         check_warnings_opt_level: OptLevel = OptLevel.O3,
         sanitizer_opt_level: OptLevel = OptLevel.O0,
-        checked_warnings: Optional[tuple[str, ...]] = None,
+        checked_warnings: tuple[str, ...] | None = None,
         compilation_timeout: int = 8,
         execution_timeout: int = 4,
         ccomp_timeout: int = 16,
@@ -156,15 +155,15 @@ class Sanitizer:
                 filter out cases with Sanitizer.default_warnings
             use_ub_address_sanitizer (bool):
                 whether to use clang's undefined behavior and address sanitizers
-            use_ccomp_if_available (Optional[bool]):
+            use_ccomp_if_available (bool | None):
                 if ccomp should be used, if ccomp is not None this argument is ignored
-            gcc (Optional[CompilerExe]):
+            gcc (CompilerExe | None):
                 the gcc executable to use, if not provided
                 CompilerExe.get_system_gcc will be used
-            clang (Optional[CompilerExe]):
+            clang (CompilerExe | None):
                 the clang executable to use, if not provided
                 CompilerExe.get_system_clang will be used
-            ccomp (Optional[CComp]:
+            ccomp (CComp | None):
                 the ccomp executable to use, if not provided and use_ccomp
                 is True CComp.get_system_ccomp will be used if available
             check_warnings_opt_level (OptLevel):
@@ -173,7 +172,7 @@ class Sanitizer:
             sanitizer_opt_level (OptLevel):
                 which optimization level to use when checking
                 for ub/address sanitizer issues
-            checked_warnings (Optional[tuple[str,...]]):
+            checked_warnings (tuple[str,...] | None):
                 if not None implies check_warnings = True and will
                 be used instead of Sanitizer.default_warnings
             compilation_timeout (int):
@@ -321,7 +320,7 @@ class Sanitizer:
 
     def check_for_ccomp_errors(
         self, program: SourceProgram, debug: bool = False
-    ) -> Optional[SanitizationResult]:
+    ) -> SanitizationResult | None:
         """Checks the program with self.ccomp if available.
 
         Interprets program with self.ccomp if available and reports whether
@@ -334,7 +333,7 @@ class Sanitizer:
                 If true, additional info will be printed in case of failure
 
         Returns:
-            Optional[SanitizationResult]:
+            SanitizationResult | None:
                 if self.ccomp is not None, whether the program
                 failed sanitization or not.
         """

@@ -2,7 +2,6 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 from ccbuilder import Commit, CompilerProject, Repo, Revision, find_cached_revisions
 
@@ -82,7 +81,7 @@ def _terminate(guaranteed_termination_counter: int) -> bool:
 
 class BisectionCallback(ABC):
     @abstractmethod
-    def check(self, commit: Commit) -> Optional[bool]:
+    def check(self, commit: Commit) -> bool | None:
         pass
 
 
@@ -98,7 +97,7 @@ class Bisector:
         good_rev: Revision,
         project: CompilerProject,
         repo: Repo,
-    ) -> Optional[Commit]:
+    ) -> Commit | None:
         """Bisect between `bad_rev` and `good_rev` based on the provided `test` callback
         `test(bad_rev)` must be True.
         `test(good_rev)` must be False.
@@ -116,7 +115,7 @@ class Bisector:
                 Repository for the `project`.
 
         Returns:
-            Optional[Commit]: The bisection commit that introduced the behaviour
+            Commit | None: The bisection commit that introduced the behaviour
         """
 
         # sanitize revs
@@ -128,7 +127,7 @@ class Bisector:
         # 'land on top', we abort.
         if not repo.is_ancestor(good_commit, bad_commit):
             bca = repo.get_best_common_ancestor(good_commit, bad_commit)
-            test_res: Optional[bool] = test.check(bca)
+            test_res: bool | None = test.check(bca)
             match test_res:
                 case False:
                     good_commit = bca
@@ -196,7 +195,7 @@ class Bisector:
             if old_midpoint == midpoint:
                 break
 
-            test_res: Optional[bool] = test.check(midpoint)
+            test_res: bool | None = test.check(midpoint)
 
             match test_res:
                 case True:
@@ -218,7 +217,7 @@ class Bisector:
         good_commit: Commit,
         project: CompilerProject,
         repo: Repo,
-    ) -> Optional[Commit]:
+    ) -> Commit | None:
 
         logging.info("Starting normal bisection...")
         len_region = len(repo.direct_first_parent_path(good_commit, bad_commit))
