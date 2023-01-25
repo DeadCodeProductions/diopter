@@ -2,7 +2,7 @@ import subprocess
 from abc import ABC, abstractmethod
 from concurrent.futures import Executor, Future, wait
 from random import randint
-from typing import Iterator, Optional
+from typing import Iterator
 
 from diopter.compiler import Language, SourceProgram
 from diopter.sanitizer import Sanitizer
@@ -110,9 +110,9 @@ class CSmithGenerator(Generator):
     def __init__(
         self,
         sanitizer: Sanitizer,
-        csmith: Optional[str] = None,
-        include_path: Optional[str] = None,
-        options_pool: Optional[list[str]] = None,
+        csmith: str | None = None,
+        include_path: str | None = None,
+        options_pool: list[str] | None = None,
         minimum_length: int = 10000,
         maximum_length: int = 50000,
     ):
@@ -120,11 +120,11 @@ class CSmithGenerator(Generator):
         Args:
             sanitizer (Sanitizer):
                 used to sanitize and discard generated code
-            csmith (Optional[str]):
+            csmith (str | None):
                 Path to csmith executable, if empty "csmith" will be used
-            include_path (Optional[str]):
+            include_path (str | None):
                 csmith include path, if empty "/usr/include/csmith-2.3.0" will be used
-            options_pool (Optional[list[str]]):
+            options_pool (list[str] | None):
                 csmith options that will be randomly selected,
                 if empty default_options_pool will be used
             minimum_length (int):

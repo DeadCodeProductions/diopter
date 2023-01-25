@@ -12,9 +12,6 @@ from pathlib import Path
 from shutil import which
 from types import TracebackType
 
-# TODO: replace Optinal with | None
-from typing import Optional
-
 from diopter.utils import run_cmd
 
 
@@ -348,9 +345,9 @@ class TemporaryFile:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_value: Optional[BaseException],
-        exc_traceback: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: TracebackType | None,
     ) -> None:
         if self.path and Path(self.path).exists():
             os.remove(self.path)
@@ -492,7 +489,7 @@ class CompilationSetting:
         program: SourceProgram,
         output: CompilationOutput,
         additional_flags: tuple[str, ...] = tuple(),
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> CompilationInfo:
 
         with TemporaryFile(
@@ -517,7 +514,7 @@ class CompilationSetting:
             )
 
     def get_llvm_ir_from_program(
-        self, program: SourceProgram, timeout: Optional[int] = None
+        self, program: SourceProgram, timeout: int | None = None
     ) -> str:
         """Extracts LLVM-IR from the program.
 
@@ -536,7 +533,7 @@ class CompilationSetting:
         self,
         program: SourceProgram,
         additional_flags: tuple[str, ...] = (),
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> str:
         """Extracts assembly code from the program.
 
@@ -564,7 +561,7 @@ class CompilationSetting:
         program: SourceProgram,
         object_file: Path,
         additional_flags: tuple[str, ...] = tuple(),
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> CompilationInfo:
         """Compiles program to object file
 
@@ -591,7 +588,7 @@ class CompilationSetting:
         program: SourceProgram,
         executable_path: Path,
         additional_flags: tuple[str, ...] = tuple(),
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> CompilationInfo:
         """Compiles program to object file
 
@@ -619,7 +616,7 @@ class CompilationSetting:
         program: SourceProgram,
         make_compiler_agnostic: bool = False,
         additional_flags: tuple[str, ...] = tuple(),
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> SourceProgram:
         """Preprocesses the program
 
@@ -754,7 +751,7 @@ class ClangTool:
         program: SourceProgram,
         tool_flags: list[str],
         mode: ClangToolMode,
-        timeout: Optional[int] = None,
+        timeout: int | None = None,
     ) -> ClangToolResult:
         """Run the clang tool on the input program
 
@@ -834,7 +831,7 @@ class CComp:
     # TODO: timeout_s: int = 8
 
     @staticmethod
-    def get_system_ccomp() -> Optional[CComp]:
+    def get_system_ccomp() -> CComp | None:
         """Returns:
         CComp:
             the system's ccomp
@@ -846,7 +843,7 @@ class CComp:
         return CComp(exe=Path(ccomp).resolve(strict=True))
 
     def check_program(
-        self, program: SourceProgram, timeout: Optional[int] = None, debug: bool = False
+        self, program: SourceProgram, timeout: int | None = None, debug: bool = False
     ) -> bool:
         """Checks the input program for errors using ccomp's interpreter mode.
 

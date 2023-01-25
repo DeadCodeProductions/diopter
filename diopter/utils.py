@@ -5,7 +5,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import IO, Any, Optional, TextIO, Union
+from typing import IO, Any, TextIO, Union
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -16,7 +16,7 @@ class CommandOutput:
 
 def run_cmd(
     cmd: Union[str, list[str]],
-    working_dir: Optional[Path] = None,
+    working_dir: Path | None = None,
     additional_env: dict[str, str] = {},
     **kwargs: Any,  # https://github.com/python/mypy/issues/8772
 ) -> CommandOutput:
@@ -45,8 +45,8 @@ def run_cmd(
 
 def run_cmd_to_logfile(
     cmd: Union[str, list[str]],
-    log_file: Optional[TextIO] = None,
-    working_dir: Optional[Path] = None,
+    log_file: TextIO | None = None,
+    working_dir: Path | None = None,
     additional_env: dict[str, str] = {},
 ) -> None:
 
@@ -87,16 +87,16 @@ class TempDirEnv:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_value: Optional[BaseException],
-        exc_traceback: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        exc_traceback: TracebackType | None,
     ) -> None:
         if self.chdir:
             os.chdir(self.old_dir)
         tempfile.tempdir = None
 
 
-def save_to_tmp_file(content: str, suffix: Optional[str] = None) -> IO[bytes]:
+def save_to_tmp_file(content: str, suffix: str | None = None) -> IO[bytes]:
     ntf = tempfile.NamedTemporaryFile(suffix=suffix)
     with open(ntf.name, "w") as f:
         f.write(content)
