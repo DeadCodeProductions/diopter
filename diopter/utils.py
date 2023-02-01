@@ -20,7 +20,6 @@ def run_cmd(
     additional_env: dict[str, str] = {},
     **kwargs: Any,  # https://github.com/python/mypy/issues/8772
 ) -> CommandOutput:
-
     if working_dir is None:
         working_dir = Path(os.getcwd())
     env = os.environ.copy()
@@ -49,7 +48,6 @@ def run_cmd_to_logfile(
     working_dir: Path | None = None,
     additional_env: dict[str, str] = {},
 ) -> None:
-
     if working_dir is None:
         working_dir = Path(os.getcwd())
     env = os.environ.copy()

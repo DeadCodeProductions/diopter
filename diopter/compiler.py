@@ -497,7 +497,6 @@ class CompilationSetting:
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
     ) -> CompilationInfo:
-
         with TemporaryFile(
             contents=program.get_modified_code(), suffix=program.get_file_suffix()
         ) as code_file:
