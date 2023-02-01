@@ -1,10 +1,10 @@
 repos:
 -   repo: https://github.com/psf/black
-    rev: 22.12.0
+    rev: 23.1.0
     hooks:
     -   id: black
 -   repo: https://github.com/PyCQA/isort
-    rev: 5.11.4
+    rev: 5.12.0
     hooks:
     -   id: isort
         args: ['--profile', 'black']
@@ -12,3 +12,15 @@ repos:
     rev: 6.0.0
     hooks:
     -   id: flake8
+-   repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v0.991
+    hooks:
+    -   id: mypy
+        additional_dependencies: [ccbuilder >= 0.0.9]
+        args: [--strict]
+-   repo: https://github.com/jendrikseipp/vulture
+    rev: v2.7
+    hooks:
+    - id: vulture
+      name: Check vulture
+
