@@ -207,7 +207,6 @@ class Reducer:
         # Setting a temporary temporary directory for creduce to be able to clean
         # up everything
         with TempDirEnv() as tmpdir:
-
             code_file = tmpdir / code_filename
             with open(code_file, "w") as f:
                 f.write(program.code)

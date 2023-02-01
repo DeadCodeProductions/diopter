@@ -175,7 +175,6 @@ class Bisector:
         project: CompilerProject,
         repo: Repo,
     ) -> tuple[Commit, Commit]:
-
         cached_commits = find_sorted_cached_commits_from_range(
             good_commit, bad_commit, project, repo, self.build_cache_prefix
         )
@@ -218,7 +217,6 @@ class Bisector:
         project: CompilerProject,
         repo: Repo,
     ) -> Commit | None:
-
         logging.info("Starting normal bisection...")
         len_region = len(repo.direct_first_parent_path(good_commit, bad_commit))
         logging.info(f"Bisecting for approx. {math.ceil(math.log2(len_region))} steps")

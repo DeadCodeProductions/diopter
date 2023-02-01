@@ -18,9 +18,3 @@ repos:
     -   id: mypy
         additional_dependencies: [ccbuilder >= 0.0.9]
         args: [--strict]
--   repo: https://github.com/jendrikseipp/vulture
-    rev: v2.7
-    hooks:
-    - id: vulture
-      name: Check vulture
-
