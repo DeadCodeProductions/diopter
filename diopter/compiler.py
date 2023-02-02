@@ -659,6 +659,13 @@ class CompilationSetting:
             preprocessed_source = re.sub(
                 r"typedef [^;]*_Float\d+x?;", r"", preprocessed_source
             )
+            # replace remaining FloatX types with the standard ones
+            preprocessed_source = re.sub(r"_Float32x", r"double", preprocessed_source)
+            preprocessed_source = re.sub(
+                r"_Float64x", r"long double", preprocessed_source
+            )
+            preprocessed_source = re.sub(r"_Float32", r"float", preprocessed_source)
+            preprocessed_source = re.sub(r"_Float64", r"double", preprocessed_source)
 
         return program.with_preprocessed_code(preprocessed_source)
 
