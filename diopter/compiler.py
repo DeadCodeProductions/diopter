@@ -11,7 +11,7 @@ from itertools import chain
 from pathlib import Path
 from shutil import which
 from types import TracebackType
-from typing import TypeVar
+from typing import IO, TypeVar
 
 from diopter.utils import run_cmd
 
@@ -357,6 +357,14 @@ class TemporaryFile:
     ) -> None:
         if self.path and Path(self.path).exists():
             os.remove(self.path)
+
+
+def temporary_file(contents: str, suffix: str) -> IO[bytes]:
+    ntf = tempfile.NamedTemporaryFile(suffix=suffix)
+    if contents:
+        with open(ntf.name, "w") as f:
+            f.write(contents)
+    return ntf
 
 
 @dataclass(frozen=True, kw_only=True)
