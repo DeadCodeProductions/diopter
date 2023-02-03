@@ -5,13 +5,14 @@ import os
 import re
 import subprocess
 import tempfile
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from enum import Enum
 from itertools import chain
 from pathlib import Path
 from shutil import which
 from types import TracebackType
-from typing import IO, TypeVar
+from typing import IO, Generic, TypeVar
 
 from diopter.utils import run_cmd
 
@@ -367,39 +368,127 @@ def temporary_file(contents: str, suffix: str) -> IO[bytes]:
     return ntf
 
 
-@dataclass(frozen=True, kw_only=True)
-class CompilationInfo:
-    source_file: Path
-    stdout_stderr_output: str
+class CompilationOutput(ABC):
+    def __init__(self, filename: Path | None) -> None:
+        if filename:
+            self.filename = filename
+            self.temporary_file = None
+        else:
+            self.temporary_file = tempfile.NamedTemporaryFile(
+                suffix=type(self).suffix(), delete=False
+            )
+            self.temporary_file.close()
+            self.filename = Path(self.temporary_file.name)
 
-
-class CompilationOutputKind(Enum):
-    Object = 0
-    Assembly = 1
-    Exec = 2
-    Unspecified = 3
-
-    def to_flag(self) -> str:
-        match self:
-            case CompilationOutputKind.Object:
-                return "-c"
-            case CompilationOutputKind.Assembly:
-                return "-S"
-            case CompilationOutputKind.Exec | CompilationOutputKind.Unspecified:
-                return ""
-
-
-@dataclass(frozen=True)
-class CompilationOutput:
-    filename: Path
-    kind: CompilationOutputKind
+    def __del__(self) -> None:
+        if self.temporary_file is None:
+            return
+        if Path(self.filename).exists():
+            os.remove(self.filename)
 
     def to_cmd(self) -> str:
-        if self.kind == CompilationOutputKind.Unspecified:
+        if type(self).empty_command():
             return ""
-        if kind_flag := self.kind.to_flag():
-            return kind_flag + " -o " + str(self.filename)
-        return "-o " + str(self.filename)
+        return type(self).flag() + " -o " + str(self.filename)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, CompilationOutput):
+            raise NotImplementedError
+        return (
+            type(self) == type(other)
+            and self.filename == other.filename
+            and self.temporary_file == other.temporary_file
+        )
+
+    @staticmethod
+    @abstractmethod
+    def flag() -> str:
+        raise NotImplementedError
+
+    @staticmethod
+    @abstractmethod
+    def suffix() -> str:
+        raise NotImplementedError
+
+    @staticmethod
+    def empty_command() -> bool:
+        return False
+
+
+class ExeCompilationOutput(CompilationOutput):
+    def __init__(self, filename: Path | None) -> None:
+        super().__init__(filename)
+        if self.temporary_file is not None:
+            os.chmod(self.filename, 0o777)
+
+    @staticmethod
+    def flag() -> str:
+        return ""
+
+    @staticmethod
+    def suffix() -> str:
+        return ".exe"
+
+
+class ObjectCompilationOutput(CompilationOutput):
+    @staticmethod
+    def flag() -> str:
+        return "-c"
+
+    @staticmethod
+    def suffix() -> str:
+        return ".o"
+
+
+class ASMCompilationOutput(CompilationOutput):
+    @staticmethod
+    def flag() -> str:
+        return "-S"
+
+    @staticmethod
+    def suffix() -> str:
+        return ".s"
+
+    def read(self) -> str:
+        with open(str(self.filename), "r") as f:
+            return f.read()
+
+
+class LLVMIRCompilationOutput(CompilationOutput):
+    @staticmethod
+    def flag() -> str:
+        return "-S -emit-llvm"
+
+    @staticmethod
+    def suffix() -> str:
+        return ".ll"
+
+
+class NoCompilationOutput(CompilationOutput):
+    def __init__(self) -> None:
+        super().__init__(Path(""))
+
+    @staticmethod
+    def flag() -> str:
+        return ""
+
+    @staticmethod
+    def suffix() -> str:
+        return ""
+
+    @staticmethod
+    def empty_command() -> bool:
+        return True
+
+
+CompilationOutputType = TypeVar("CompilationOutputType", bound=CompilationOutput)
+
+
+@dataclass(frozen=True, kw_only=True)
+class CompilationResult(Generic[CompilationOutputType]):
+    source_file: Path
+    output: CompilationOutputType
+    stdout_stderr_output: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -492,7 +581,7 @@ class CompilationSetting:
             )
         )
 
-        if include_language_flags and output.kind == CompilationOutputKind.Exec:
+        if include_language_flags and isinstance(output, ExeCompilationOutput):
             if linker_flag := program[0].language.get_linker_flag():
                 cmd.append(linker_flag)
         cmd.append(output.to_cmd())
@@ -500,128 +589,29 @@ class CompilationSetting:
 
     def compile_program(
         self,
-        program: ProgramType,
-        output: CompilationOutput,
+        program: SourceProgram,
+        output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
-    ) -> CompilationInfo:
-        with TemporaryFile(
-            contents=program.get_modified_code(), suffix=program.get_file_suffix()
-        ) as code_file:
-            cmd = self.get_compilation_cmd((program, code_file), output, True) + list(
-                additional_flags
-            )
-            try:
-                command_output = run_cmd(
-                    cmd,
-                    timeout=timeout,
-                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
-                )
-            except subprocess.CalledProcessError as e:
-                raise CompileError.from_called_process_exception(" ".join(cmd), e)
-            return CompilationInfo(
-                source_file=Path(code_file),
-                stdout_stderr_output=command_output.stdout
-                + "\n"
-                + command_output.stderr,
-            )
-
-    def get_llvm_ir_from_program(
-        self, program: ProgramType, timeout: int | None = None
-    ) -> str:
-        """Extracts LLVM-IR from the program.
-
-        This only works with LLVM compilers.
-
-        Args:
-           program (ProgramType): input program
-           timeout (int | None): timeout in seconds for the compilation command
-        Returns:
-            str:
-                LLVM-IR
-        """
-        return self.get_asm_from_program(program, ("--emit-llvm",), timeout=timeout)
-
-    def get_asm_from_program(
-        self,
-        program: ProgramType,
-        additional_flags: tuple[str, ...] = (),
-        timeout: int | None = None,
-    ) -> str:
-        """Extracts assembly code from the program.
-
-        Args:
-           program (ProgramType): input program
-           additional_flags (tuple[str, ...]): additional flags used for the compilation
-           timeout (int | None): timeout in seconds for the compilation command
-
-        Returns:
-            str:
-                assembly code
-        """
-        with TemporaryFile(contents="", suffix=".s") as asm_file:
-            self.compile_program(
-                program,
-                CompilationOutput(asm_file, CompilationOutputKind.Assembly),
-                additional_flags,
-                timeout,
-            )
-            with open(str(asm_file), "r") as f:
-                return f.read()
-
-    def compile_program_to_object(
-        self,
-        program: ProgramType,
-        object_file: Path,
-        additional_flags: tuple[str, ...] = tuple(),
-        timeout: int | None = None,
-    ) -> CompilationInfo:
-        """Compiles program to object file
-
-        Args:
-           program (ProgramType): input program
-           object_file (Path): path to the output
-           additional_flags (tuple[str, ...]): additional flags used for the compilation
-           timeout (int | None): timeout in seconds for the compilation command
-
-        Returns:
-            CompilationInfo:
-                information about the compilation
-        """
-
-        return self.compile_program(
-            program,
-            CompilationOutput(object_file, CompilationOutputKind.Object),
-            additional_flags,
-            timeout=timeout,
+    ) -> CompilationResult[CompilationOutputType]:
+        code_file = temporary_file(
+            program.get_modified_code(), program.get_file_suffix()
         )
-
-    def compile_program_to_executable(
-        self,
-        program: ProgramType,
-        executable_path: Path,
-        additional_flags: tuple[str, ...] = tuple(),
-        timeout: int | None = None,
-    ) -> CompilationInfo:
-        """Compiles program to object file
-
-        Args:
-           program (ProgramType): input program
-           executable_file (Path): path to the output
-           additional_flags (tuple[str, ...]): additional flags used for the compilation
-           timeout (int | None): timeout in seconds for the compilation command
-
-        Returns:
-            CompilationInfo:
-                information about the compilation
-        """
-
-        # TODO: check/set file permissions of executable_path if it exists?
-        return self.compile_program(
-            program,
-            CompilationOutput(executable_path, CompilationOutputKind.Exec),
-            additional_flags,
-            timeout=timeout,
+        cmd = self.get_compilation_cmd(
+            (program, Path(code_file.name)), output, True
+        ) + list(additional_flags)
+        try:
+            command_output = run_cmd(
+                cmd,
+                timeout=timeout,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+            )
+        except subprocess.CalledProcessError as e:
+            raise CompileError.from_called_process_exception(" ".join(cmd), e)
+        return CompilationResult(
+            source_file=Path(code_file.name),
+            output=output,
+            stdout_stderr_output=command_output.stdout + "\n" + command_output.stderr,
         )
 
     def preprocess_program(
@@ -634,25 +624,26 @@ class CompilationSetting:
         """Preprocesses the program
 
         Args:
-           program (ProgramType): input program
-           additional_flags (tuple[str, ...]): additional flags used for the compilation
-           make_compiler_agnostic (bool):
-               if true will try to remove certain constructs (e.g., attributes)
-               such that the resulting program can be compiled with both gcc and clang
-           timeout (int | None): timeout in seconds for the compilation command
+        program (ProgramType): input program
+        additional_flags (tuple[str, ...]): additional flags used for the compilation
+        make_compiler_agnostic (bool):
+        if true will try to remove certain constructs (e.g., attributes)
+        such that the resulting program can be compiled with both gcc and clang
+        timeout (int | None): timeout in seconds for the compilation command
 
         Returns:
-            Source:
-                the prepocessed program
+        Source:
+        the prepocessed program
 
         """
 
-        preprocessed_source = self.compile_program(
+        result = self.compile_program(
             program,
-            CompilationOutput(Path(""), CompilationOutputKind.Unspecified),
+            ASMCompilationOutput(None),
             ("-P", "-E") + additional_flags,
             timeout=timeout,
-        ).stdout_stderr_output
+        )
+        preprocessed_source = result.output.read()
 
         if make_compiler_agnostic:
             # remove malloc attributes with args, clang doesn't understand these
@@ -993,16 +984,16 @@ def parse_compilation_setting_from_string(
         macro_definitions=macro_definitions,
         flags=tuple(flags),
     )
-
+    output: CompilationOutput
     if parsed_args.o:
         if parsed_args.c:
-            kind = CompilationOutputKind.Object
+            output = ObjectCompilationOutput(Path(parsed_args.o))
         elif parsed_args.S:
-            kind = CompilationOutputKind.Assembly
+            # TODO: check for emit-llvm?
+            output = ASMCompilationOutput(Path(parsed_args.o))
         else:
-            kind = CompilationOutputKind.Exec
-        output = CompilationOutput(parsed_args.o, kind)
+            output = ExeCompilationOutput(Path(parsed_args.o))
     else:
-        output = CompilationOutput(Path(""), CompilationOutputKind.Unspecified)
+        output = NoCompilationOutput()
 
     return csetting, sources, output

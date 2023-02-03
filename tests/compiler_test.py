@@ -57,12 +57,11 @@ def test_compile_to_object() -> None:
     program = SourceProgram(code=input_code, language=Language.C)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
-    object1 = strip_and_read_binary(
-        cs.compile_program(
-            program,
-            ObjectCompilationOutput(None),
-        ).output.filename
+    res = cs.compile_program(
+        program,
+        ObjectCompilationOutput(None),
     )
+    object1 = strip_and_read_binary(res.output.filename)
 
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())
     object_file2 = temporary_file(contents="", suffix=".o")
@@ -81,9 +80,12 @@ def test_compile_to_object_cpp() -> None:
     program = SourceProgram(code=input_code, language=Language.CPP)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
-    object1 = strip_and_read_binary(
-        cs.compile_program(program, ObjectCompilationOutput(None)).output.filename
+    res = cs.compile_program(
+        program,
+        ObjectCompilationOutput(None),
     )
+
+    object1 = strip_and_read_binary(res.output.filename)
 
     object_file2 = temporary_file(contents="", suffix=".o")
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())

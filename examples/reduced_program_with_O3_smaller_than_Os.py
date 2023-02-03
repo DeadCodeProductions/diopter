@@ -5,10 +5,13 @@ In this example diopter is used to generate and reduce a csmith
 that results in larger text with -Os than -O3
 """
 
-from pathlib import Path
-from tempfile import NamedTemporaryFile
-
-from diopter.compiler import CompilationSetting, CompilerExe, OptLevel, SourceProgram
+from diopter.compiler import (
+    CompilationSetting,
+    CompilerExe,
+    ObjectCompilationOutput,
+    OptLevel,
+    SourceProgram,
+)
 from diopter.generator import CSmithGenerator
 from diopter.reducer import Reducer, ReductionCallback
 from diopter.sanitizer import Sanitizer
@@ -16,12 +19,11 @@ from diopter.utils import run_cmd
 
 
 def get_size(program: SourceProgram, setting: CompilationSetting) -> int:
-    with NamedTemporaryFile(suffix=".o") as ntf:
-        setting.compile_program_to_object(program, Path(ntf.name))
-        size_cmd_output = run_cmd(f"size {ntf.name}").stdout
-        line = list(size_cmd_output.splitlines())[-1].strip()
-        s = line.split()[0]
-        return int(s)
+    result = setting.compile_program(program, ObjectCompilationOutput(None))
+    size_cmd_output = run_cmd(f"size {result.output.filename}").stdout
+    line = list(size_cmd_output.splitlines())[-1].strip()
+    s = line.split()[0]
+    return int(s)
 
 
 def filter(
