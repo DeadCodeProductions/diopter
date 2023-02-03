@@ -2,10 +2,13 @@ from pathlib import Path
 from shutil import which
 
 from diopter.compiler import (
+    ASMCompilationOutput,
     CompilationSetting,
     CompilerExe,
     CompilerProject,
+    ExeCompilationOutput,
     Language,
+    ObjectCompilationOutput,
     OptLevel,
     SourceProgram,
     temporary_file,
@@ -29,7 +32,7 @@ def test_get_asm_from_program() -> None:
     program = SourceProgram(code=input_code, language=Language.C)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2, flags=("-m32",))
-    asm = cs.get_asm_from_program(program)
+    asm = cs.compile_program(program, ASMCompilationOutput(None)).output.read()
 
     tf = temporary_file(contents=program.code, suffix=program.get_file_suffix())
     result = run_cmd(f"gcc {tf.name} -mno-red-zone -o /dev/stdout -O2 -m32 -S")
@@ -43,9 +46,9 @@ def test_get_asm_from_program() -> None:
     assert canonicalize(asm) == canonicalize(asm_manual)
 
 
-def strip_and_read_binary(path: str) -> bytes:
+def strip_and_read_binary(path: Path) -> bytes:
     run_cmd(f"strip {path}")
-    with open(path, "rb") as f:
+    with open(str(path), "rb") as f:
         return f.read()
 
 
@@ -54,19 +57,19 @@ def test_compile_to_object() -> None:
     program = SourceProgram(code=input_code, language=Language.C)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
-    object_file1 = temporary_file(contents="", suffix=".o")
-    cs.compile_program_to_object(
-        program,
-        Path(object_file1.name),
+    object1 = strip_and_read_binary(
+        cs.compile_program(
+            program,
+            ObjectCompilationOutput(None),
+        ).output.filename
     )
-    object1 = strip_and_read_binary(object_file1.name)
 
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())
     object_file2 = temporary_file(contents="", suffix=".o")
     cmd = f"gcc {code_file.name} -o {object_file2.name} -O2 -c"
     run_cmd(cmd)
 
-    object2 = strip_and_read_binary(object_file2.name)
+    object2 = strip_and_read_binary(Path(object_file2.name))
 
     assert object1 == object2
 
@@ -78,19 +81,16 @@ def test_compile_to_object_cpp() -> None:
     program = SourceProgram(code=input_code, language=Language.CPP)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
-    object_file1 = temporary_file(contents="", suffix=".o")
-    cs.compile_program_to_object(
-        program,
-        Path(object_file1.name),
+    object1 = strip_and_read_binary(
+        cs.compile_program(program, ObjectCompilationOutput(None)).output.filename
     )
-    object1 = strip_and_read_binary(object_file1.name)
 
     object_file2 = temporary_file(contents="", suffix=".o")
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())
     cmd = f"g++ {code_file.name} -o {object_file2.name} -O2 -c"
     run_cmd(cmd)
 
-    object2 = strip_and_read_binary(object_file2.name)
+    object2 = strip_and_read_binary(Path(object_file2.name))
 
     assert object1 == object2
 
@@ -100,13 +100,12 @@ def test_compile_to_exec() -> None:
     program = SourceProgram(code=input_code, language=Language.C)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
-    exe_file1 = temporary_file(contents="", suffix=".exe")
-    cs.compile_program_to_executable(
+    res = cs.compile_program(
         program,
-        Path(exe_file1.name),
+        ExeCompilationOutput(None),
     )
-    assert which(exe_file1.name)
-    exe1 = strip_and_read_binary(exe_file1.name)
+    assert which(res.output.filename)
+    exe1 = strip_and_read_binary(res.output.filename)
 
     exe_file2 = temporary_file(contents="", suffix=".exe")
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())
@@ -114,6 +113,22 @@ def test_compile_to_exec() -> None:
     run_cmd(cmd)
 
     assert which(exe_file2.name)
-    exe2 = strip_and_read_binary(exe_file2.name)
+    exe2 = strip_and_read_binary(Path(exe_file2.name))
 
     assert exe1 == exe2
+
+
+def test_preprocess() -> None:
+    input_code = """
+    #define MACRO1 4
+    int foo(){
+        return MACRO1 + MACRO2;
+    }
+    """
+    program = SourceProgram(code=input_code, language=Language.C)
+    compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
+    cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
+    pp_code = cs.preprocess_program(program, False, ("-DMACRO2=33",)).code
+    assert "".join(pp_code.split()) == "".join(
+        "int foo(){ return 4 + 33; }".split()
+    ), pp_code
