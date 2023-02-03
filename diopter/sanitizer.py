@@ -13,9 +13,7 @@ if not sanitizer.sanitize(program):
 """
 from __future__ import annotations
 
-import os
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,6 +22,8 @@ from diopter.compiler import (
     CompilationSetting,
     CompileError,
     CompilerExe,
+    ExeCompilationOutput,
+    ObjectCompilationOutput,
     OptLevel,
     SourceProgram,
 )
@@ -217,9 +217,9 @@ class Sanitizer:
 
         def check_warnings_impl(comp: CompilationSetting) -> SanitizationResult:
             try:
-                result = comp.compile_program_to_object(
+                result = comp.compile_program(
                     program,
-                    Path("/dev/null"),
+                    ObjectCompilationOutput(Path("/dev/null")),
                     (
                         "-Wall",
                         "-Wextra",
@@ -279,17 +279,14 @@ class Sanitizer:
         """
 
         with TempDirEnv():
-            exe = tempfile.NamedTemporaryFile(suffix=".exe", delete=False)
-            exe.close()
-            os.chmod(exe.name, 0o777)
             # Compile program with -fsanitize=...
             try:
-                CompilationSetting(
+                result = CompilationSetting(
                     compiler=self.clang,
                     opt_level=self.sanitizer_opt_level,
-                ).compile_program_to_executable(
+                ).compile_program(
                     program,
-                    Path(exe.name),
+                    ExeCompilationOutput(None),
                     (
                         "-Wall",
                         "-Wextra",
@@ -308,7 +305,7 @@ class Sanitizer:
 
             # Run the instrumented binary
             try:
-                run_cmd(exe.name, timeout=self.execution_timeout)
+                run_cmd(str(result.output.filename), timeout=self.execution_timeout)
             except subprocess.TimeoutExpired:
                 return SanitizationResult(timeout=True)
             except subprocess.CalledProcessError as e:
