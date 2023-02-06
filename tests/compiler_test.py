@@ -161,3 +161,38 @@ def test_exe_run() -> None:
     assert output.stdout.strip() == "2"
     output = res.output.run(("asdf", "fff"))
     assert output.stdout.strip() == "3"
+
+
+def test_async_compile() -> None:
+    input_code = "int foo(int a){ return a + 1; }"
+    program = SourceProgram(code=input_code, language=Language.C)
+    compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
+    cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
+    res1 = cs.compile_program(
+        program,
+        ObjectCompilationOutput(),
+    )
+    res1.output.strip_symbols()
+    object1 = res1.output.read()
+
+    res2 = cs.compile_program_async(
+        program,
+        ObjectCompilationOutput(),
+    ).result(8)
+
+    res2.output.strip_symbols()
+    object2 = res2.output.read()
+
+    assert object1 == object2
+
+    async_res3 = cs.compile_program_async(
+        program,
+        ObjectCompilationOutput(),
+    )
+    # calling wait should not change the result
+    async_res3.wait(8)
+    res3 = async_res3.result(8)
+    res3.output.strip_symbols()
+    object3 = res3.output.read()
+
+    assert object2 == object3

@@ -60,9 +60,10 @@ from enum import Enum
 from itertools import chain
 from pathlib import Path
 from shutil import which
-from typing import Generic, TypeVar
+from subprocess import Popen
+from typing import IO, Any, Generic, TypeVar
 
-from diopter.utils import CommandOutput, run_cmd, temporary_file
+from diopter.utils import CommandOutput, run_cmd, run_cmd_async, temporary_file
 
 
 class Language(Enum):
@@ -675,6 +676,73 @@ class CompilationResult(Generic[CompilationOutputType]):
     stdout_stderr_output: str
 
 
+@dataclass(frozen=True)
+class AsyncCompilationResult(Generic[CompilationOutputType]):
+    """A wrapper over a pending `CompilationResult`
+    from a compiler that is running in a subprocess.
+
+    Returned by CompilationSetting.compile_program_async
+
+    Attributes:
+        cmd (str):
+            the compiler command that is running in the subprocess
+        proc (Popen[Any]):
+            the running subprocess
+        code_file (IO[bytes]):
+            the file containing the source code
+        output (CompilationOutputType):
+            the pending compilation output
+    """
+
+    cmd: str
+    proc: Popen[Any]
+    code_file: IO[bytes]
+    output: CompilationOutputType
+
+    def result(
+        self, timeout: int | None = None
+    ) -> CompilationResult[CompilationOutputType]:
+        """Waits for the subprocess to finish
+        and returns the compilation output.
+
+        Args:
+            timeout (int | None):
+                if not None, how many seconds to wait before
+                raising a subprocess.TimeoutExpired
+
+        Returns:
+            CompilationOutputType:
+                the compilation output
+        """
+        outs, errs = self.proc.communicate(timeout=timeout)
+        assert isinstance(outs, str)
+        assert isinstance(errs, str)
+
+        if self.proc.returncode != 0:
+            output = self.cmd
+            if outs:
+                output += "\nSTDOUT====\n" + outs
+            if errs:
+                output += "\nSTDERR====\n" + errs
+            raise CompileError(output)
+
+        return CompilationResult(
+            source_file=Path(self.code_file.name),
+            output=self.output,
+            stdout_stderr_output=outs + "\n" + errs,
+        )
+
+    def wait(self, timeout: int | None = None) -> None:
+        """Waits for the subprocess to finish.
+
+        Args:
+            timeout (int | None):
+                if not None, how many seconds to wait before
+                raising a subprocess.TimeoutExpired
+        """
+        self.proc.wait(timeout)
+
+
 @dataclass(frozen=True, kw_only=True)
 class CompilationSetting:
     """
@@ -811,6 +879,45 @@ class CompilationSetting:
             source_file=Path(code_file.name),
             output=output,
             stdout_stderr_output=command_output.stdout + "\n" + command_output.stderr,
+        )
+
+    def compile_program_async(
+        self,
+        program: SourceProgram,
+        output: CompilationOutputType,
+        additional_flags: tuple[str, ...] = tuple(),
+    ) -> AsyncCompilationResult[CompilationOutputType]:
+        """Compile a program with this setting asynchronously.
+
+        You most likely want `compile_program` instead of this method.
+        `compile_program_async` is useful if the calling process must
+        interact with the compiler, e.g., via IPC
+
+        Args:
+            program (ProgramType):
+                input program
+            output (CompilationOutputType):
+                the desired output, e.g., executable or object file
+            additional_flags (tuple[str, ...]):
+                additional flags used for the compilation
+
+        Returns:
+            AsyncCompilationResult[CompilationOutputType]:
+                The result of the compilation (if successful).
+        """
+        code_file = temporary_file(
+            contents=program.get_modified_code(), suffix=program.get_file_suffix()
+        )
+        cmd = self.get_compilation_cmd(
+            (program, Path(code_file.name)), output, True
+        ) + list(additional_flags)
+        return AsyncCompilationResult(
+            " ".join(cmd),
+            run_cmd_async(
+                cmd, additional_env={"TMPDIR": str(tempfile.gettempdir())}, text=True
+            ),
+            code_file,
+            output,
         )
 
     def preprocess_program(
