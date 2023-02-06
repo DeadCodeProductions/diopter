@@ -1,3 +1,52 @@
+""" Python wrapper for running a compiler
+
+Important classes:
+    - `SourceProgram`: represents a C or C++ program together with additional
+      info (flags, macro definitions, includ paths) that can be compiled.
+    - `CompilerExe`: a compiler executable (e.g., "gcc", "/usr/bin/clang-14", etc)
+    - `CompilationOutput`: the output of a compiler invocation, e.g., an object file
+    - `CompilationSetting`: a CompilerExe together with an optimization level and
+      additional flags used to compile `SourceProgram`s. Can be parsed from a
+      string, "gcc -O3 test.c -o test.o -MACRO1=foo -fomit-frame-pointer"  with
+      `parse_compilation_setting_from_string`
+
+Example:
+from pathlib import Path
+from diopter.compiler import (
+    CompilationSetting,
+    CompilerExe,
+    CompilerProject,
+    ExeCompilationOutput,
+    Language,
+    OptLevel,
+    SourceProgram,
+)
+input_code = \"\"\"
+             #include <stdio.h>
+             void foo(int argc){
+                 printf("%d \\n", argc);
+             }
+             int main(int argc, char* argv[]){
+                 foo(argc);
+             }
+\"\"\"
+# Create a program
+program = SourceProgram(code=input_code, language=Language.C)
+# Get the system gcc compiler
+compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
+# Create a compilation setting
+cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
+# Compile the program to an executable
+res = cs.compile_program( program, ExeCompilationOutput())
+# Run the program
+output = res.output.run()
+# The output should be 1 (argc is 1 if no flags a passed)
+assert output.stdout.strip() == "1"
+# Run the program with one flag
+output = res.output.run(("-flag",))
+# The output should be 2
+assert output.stdout.strip() == "2"
+"""
 from __future__ import annotations
 
 import argparse
