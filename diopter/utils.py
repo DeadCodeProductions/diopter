@@ -42,6 +42,29 @@ def run_cmd(
     )
 
 
+def run_cmd_async(
+    cmd: Union[str, list[str]],
+    working_dir: Path | None = None,
+    additional_env: dict[str, str] = {},
+    **kwargs: Any,
+) -> subprocess.Popen[Any]:
+    if working_dir is None:
+        working_dir = Path(os.getcwd())
+    env = os.environ.copy()
+    env.update(additional_env)
+
+    if isinstance(cmd, list):
+        cmd = " ".join(cmd)
+    return subprocess.Popen(
+        shlex.split(cmd.replace('"', '\\"')),
+        cwd=str(working_dir),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **kwargs,
+    )
+
+
 def run_cmd_to_logfile(
     cmd: Union[str, list[str]],
     log_file: TextIO | None = None,
