@@ -31,7 +31,7 @@ def test_get_asm_from_program() -> None:
     program = SourceProgram(code=input_code, language=Language.C)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2, flags=("-m32",))
-    asm = cs.compile_program(program, ASMCompilationOutput(None)).output.read()
+    asm = cs.compile_program(program, ASMCompilationOutput()).output.read()
 
     tf = temporary_file(contents=program.code, suffix=program.get_file_suffix())
     result = run_cmd(f"gcc {tf.name} -mno-red-zone -o /dev/stdout -O2 -m32 -S")
@@ -58,7 +58,7 @@ def test_compile_to_object() -> None:
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
     res = cs.compile_program(
         program,
-        ObjectCompilationOutput(None),
+        ObjectCompilationOutput(),
     )
     res.output.strip_symbols()
     object1 = res.output.read()
@@ -82,7 +82,7 @@ def test_compile_to_object_cpp() -> None:
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
     res = cs.compile_program(
         program,
-        ObjectCompilationOutput(None),
+        ObjectCompilationOutput(),
     )
 
     res.output.strip_symbols()
@@ -105,7 +105,7 @@ def test_compile_to_exec() -> None:
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
     res = cs.compile_program(
         program,
-        ExeCompilationOutput(None),
+        ExeCompilationOutput(),
     )
     assert which(res.output.filename)
     res.output.strip_symbols()
@@ -153,7 +153,7 @@ def test_exe_run() -> None:
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
     res = cs.compile_program(
         program,
-        ExeCompilationOutput(None),
+        ExeCompilationOutput(),
     )
     output = res.output.run()
     assert output.stdout.strip() == "1"
