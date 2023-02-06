@@ -14,7 +14,7 @@ from shutil import which
 from types import TracebackType
 from typing import IO, Generic, TypeVar
 
-from diopter.utils import run_cmd
+from diopter.utils import CommandOutput, run_cmd
 
 
 class Language(Enum):
@@ -380,6 +380,9 @@ class CompilationOutput(ABC):
             self.temporary_file.close()
             self.filename = Path(self.temporary_file.name)
 
+    def get_filename(self) -> Path:
+        return self.filename
+
     def __del__(self) -> None:
         if self.temporary_file is None:
             return
@@ -415,11 +418,36 @@ class CompilationOutput(ABC):
         return False
 
 
-class ExeCompilationOutput(CompilationOutput):
+class BinaryOutputMixin(ABC):
+    @abstractmethod
+    def get_filename(self) -> Path:
+        raise NotImplementedError
+
+    def strip_symbols(self) -> None:
+        run_cmd(f"strip {self.get_filename()}")
+
+    def read(self) -> bytes:
+        with open(str(self.get_filename()), "rb") as f:
+            return f.read()
+
+
+class ExeCompilationOutput(CompilationOutput, BinaryOutputMixin):
     def __init__(self, filename: Path | None) -> None:
         super().__init__(filename)
         if self.temporary_file is not None:
             os.chmod(self.filename, 0o777)
+
+    def run(self, flags: tuple[str, ...] = tuple()) -> CommandOutput:
+        """Runs the exe with the provided flags.
+
+        Args:
+            flags (tuple[str]):
+                flags passed to the exe
+        Returns:
+            CommandOutput:
+                the captured stdout and stderr
+        """
+        return run_cmd(f"{self.filename} {' '.join(flags)}")
 
     @staticmethod
     def flag() -> str:
@@ -430,7 +458,7 @@ class ExeCompilationOutput(CompilationOutput):
         return ".exe"
 
 
-class ObjectCompilationOutput(CompilationOutput):
+class ObjectCompilationOutput(CompilationOutput, BinaryOutputMixin):
     @staticmethod
     def flag() -> str:
         return "-c"
@@ -462,6 +490,10 @@ class LLVMIRCompilationOutput(CompilationOutput):
     @staticmethod
     def suffix() -> str:
         return ".ll"
+
+    def read(self) -> str:
+        with open(str(self.filename), "r") as f:
+            return f.read()
 
 
 class NoCompilationOutput(CompilationOutput):

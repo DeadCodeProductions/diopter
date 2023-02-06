@@ -61,7 +61,8 @@ def test_compile_to_object() -> None:
         program,
         ObjectCompilationOutput(None),
     )
-    object1 = strip_and_read_binary(res.output.filename)
+    res.output.strip_symbols()
+    object1 = res.output.read()
 
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())
     object_file2 = temporary_file(contents="", suffix=".o")
@@ -85,7 +86,8 @@ def test_compile_to_object_cpp() -> None:
         ObjectCompilationOutput(None),
     )
 
-    object1 = strip_and_read_binary(res.output.filename)
+    res.output.strip_symbols()
+    object1 = res.output.read()
 
     object_file2 = temporary_file(contents="", suffix=".o")
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())
@@ -107,7 +109,8 @@ def test_compile_to_exec() -> None:
         ExeCompilationOutput(None),
     )
     assert which(res.output.filename)
-    exe1 = strip_and_read_binary(res.output.filename)
+    res.output.strip_symbols()
+    exe1 = res.output.read()
 
     exe_file2 = temporary_file(contents="", suffix=".exe")
     code_file = temporary_file(contents=program.code, suffix=program.get_file_suffix())
@@ -134,3 +137,28 @@ def test_preprocess() -> None:
     assert "".join(pp_code.split()) == "".join(
         "int foo(){ return 4 + 33; }".split()
     ), pp_code
+
+
+def test_exe_run() -> None:
+    input_code = """
+    #include <stdio.h>
+    void foo(int argc){
+        printf("%d \\n", argc);
+    }
+    int main(int argc, char* argv[]){
+        foo(argc);
+    }
+    """
+    program = SourceProgram(code=input_code, language=Language.C)
+    compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
+    cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
+    res = cs.compile_program(
+        program,
+        ExeCompilationOutput(None),
+    )
+    output = res.output.run()
+    assert output.stdout.strip() == "1"
+    output = res.output.run(("asdf",))
+    assert output.stdout.strip() == "2"
+    output = res.output.run(("asdf", "fff"))
+    assert output.stdout.strip() == "3"
