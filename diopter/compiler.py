@@ -513,6 +513,8 @@ class CompilationOutput(ABC):
 
         Subclasses of CompilationOutput can override this method.
 
+        Currently only relevant to NoCompilationOutput.
+
         Returns:
             bool:
                 if this compilation output kind should not inlcude any flags
@@ -853,7 +855,7 @@ class CompilationSetting:
                 timeout in seconds for the compilation command
 
         Returns:
-            Source:
+            ProgramType:
                 the prepocessed program
         """
 
