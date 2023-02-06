@@ -11,7 +11,6 @@ from enum import Enum
 from itertools import chain
 from pathlib import Path
 from shutil import which
-from types import TracebackType
 from typing import IO, Generic, TypeVar
 
 from diopter.utils import CommandOutput, run_cmd
@@ -336,31 +335,20 @@ class CompileError(Exception):
         return CompileError(output)
 
 
-class TemporaryFile:
-    def __init__(self, *, contents: str, suffix: str):
-        self.contents = contents
-        self.suffix = suffix
-        self.path: str | None = None
-
-    def __enter__(self) -> Path:
-        fd, self.path = tempfile.mkstemp(suffix=self.suffix)
-        os.close(fd)
-        if self.contents:
-            with open(self.path, "w") as f:
-                f.write(self.contents)
-        return Path(self.path).resolve(strict=True)
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        exc_traceback: TracebackType | None,
-    ) -> None:
-        if self.path and Path(self.path).exists():
-            os.remove(self.path)
-
-
 def temporary_file(contents: str, suffix: str) -> IO[bytes]:
+    """Creates a named temporary file with extension
+    `suffix` and writes `contents` into it.
+
+    Args:
+        contents (str):
+            what to write in the temporary file
+        suffix (str):
+            the file's extension (e.g., ".c")
+    Returns:
+        tempfile.NamedTemporaryFile:
+            a temporary file that is automatically deleted when the object is
+            garbage collected
+    """
     ntf = tempfile.NamedTemporaryFile(suffix=suffix)
     if contents:
         with open(ntf.name, "w") as f:
@@ -369,27 +357,63 @@ def temporary_file(contents: str, suffix: str) -> IO[bytes]:
 
 
 class CompilationOutput(ABC):
-    def __init__(self, filename: Path | None) -> None:
+    """Represents the output of a compiler invocation,e.g.,
+    an Object file, an Executable, assembly code, etc.
+
+    Subclasses of CompilationOutput are used to specify what kind of output is
+    desired in `CompilationResult.compile_program`.
+
+    Attributes:
+        filename (Path):
+            the output filename that will be passed as `-o filename` to the
+            compiler invocation, if not specified a temporary file will be
+            created.
+        temporary_file (tempfile.NamedTemporaryFile):
+            a temporary file where the output will be writen, if no filename
+            is specified when creating the CompilationOutput object
+
+    """
+
+    def __init__(self, filename: Path | None = None) -> None:
+        """Create a compilation output, either using the specified path or with
+        a temporary file. The temporary file is automatically removed with the
+        CompilationOutput object is garbage collected.
+
+        Args:
+            filename (Path | None):
+                where to write the compilation output if not None
+        """
+
         if filename:
-            self.filename = filename
+            self.filename_ = filename
             self.temporary_file = None
         else:
             self.temporary_file = tempfile.NamedTemporaryFile(
                 suffix=type(self).suffix(), delete=False
             )
             self.temporary_file.close()
-            self.filename = Path(self.temporary_file.name)
+            self.filename_ = Path(self.temporary_file.name)
 
-    def get_filename(self) -> Path:
-        return self.filename
+    @property
+    def filename(self) -> Path:
+        return self.filename_
 
     def __del__(self) -> None:
+        """Delete the temporary file if one was created and still exists"""
         if self.temporary_file is None:
             return
         if Path(self.filename).exists():
             os.remove(self.filename)
 
     def to_cmd(self) -> str:
+        """Create the relevant compilation flags for this output.
+
+        Used in CompilationSetting.get_compilation_cmd.
+
+        Returns:
+            str:
+                the necessary compilation flags, e.g., "-c -o filename.o"
+        """
         if type(self).empty_command():
             return ""
         return type(self).flag() + " -o " + str(self.filename)
@@ -406,36 +430,91 @@ class CompilationOutput(ABC):
     @staticmethod
     @abstractmethod
     def flag() -> str:
+        """Return the relevant flag for this output.
+
+        E.g., for object outputs it should be "-c"
+
+        Subclasses of CompilationOutput should implement this method.
+
+        Returns:
+            str:
+                the compiler flag for this kind of output
+        """
         raise NotImplementedError
 
     @staticmethod
     @abstractmethod
     def suffix() -> str:
+        """Return the relevant filename suffix for this output.
+
+        E.g., for object outputs it should be ".o"
+
+        Subclasses of CompilationOutput should implement this method.
+
+        Returns:
+            str:
+                the filename output for the compilation output
+        """
+
         raise NotImplementedError
 
     @staticmethod
     def empty_command() -> bool:
+        """Whether this kind of output should not include any compiler flags.
+
+        Subclasses of CompilationOutput can override this method.
+
+        Returns:
+            bool:
+                if this compilation output kind should not inlcude any flags
+        """
         return False
 
 
 class BinaryOutputMixin(ABC):
+    """Mixin for binary compilation outputs adding utility methods."""
+
+    @property
     @abstractmethod
-    def get_filename(self) -> Path:
+    def filename(self) -> Path:
         raise NotImplementedError
 
     def strip_symbols(self) -> None:
-        run_cmd(f"strip {self.get_filename()}")
+        """Runs the strip utility on the output, this the program's removes
+        symbols.
+
+        Useful, e.g., for comparing whether two outputs are equal.
+        """
+        run_cmd(f"strip {self.filename}")
 
     def read(self) -> bytes:
-        with open(str(self.get_filename()), "rb") as f:
+        """Read the output.
+
+        Returns:
+            bytes:
+                The binary's contents.
+        """
+
+        with open(str(self.filename), "rb") as f:
             return f.read()
 
 
 class ExeCompilationOutput(CompilationOutput, BinaryOutputMixin):
-    def __init__(self, filename: Path | None) -> None:
+    """An executable compilation output.
+
+    Attributes: (see `CompilationOutput`)
+    """
+
+    def __init__(self, filename: Path | None = None) -> None:
+        """Create an ExeCompilationOutput and set the correct permissions
+        if a temporary file is created such that it is executable.
+        """
         super().__init__(filename)
         if self.temporary_file is not None:
             os.chmod(self.filename, 0o777)
+        else:
+            # check for permissions if the file exists?
+            pass
 
     def run(self, flags: tuple[str, ...] = tuple()) -> CommandOutput:
         """Runs the exe with the provided flags.
@@ -459,6 +538,11 @@ class ExeCompilationOutput(CompilationOutput, BinaryOutputMixin):
 
 
 class ObjectCompilationOutput(CompilationOutput, BinaryOutputMixin):
+    """An object file compilation output.
+
+    Attributes: (see `CompilationOutput`)
+    """
+
     @staticmethod
     def flag() -> str:
         return "-c"
@@ -469,6 +553,11 @@ class ObjectCompilationOutput(CompilationOutput, BinaryOutputMixin):
 
 
 class ASMCompilationOutput(CompilationOutput):
+    """An assembly file compilation output.
+
+    Attributes: (see `CompilationOutput`)
+    """
+
     @staticmethod
     def flag() -> str:
         return "-S"
@@ -478,11 +567,22 @@ class ASMCompilationOutput(CompilationOutput):
         return ".s"
 
     def read(self) -> str:
+        """Read the assembly code.
+
+        Returns:
+            str:
+                the assembly code read from the output file
+        """
         with open(str(self.filename), "r") as f:
             return f.read()
 
 
 class LLVMIRCompilationOutput(CompilationOutput):
+    """An LLVM IR file compilation output.
+
+    Attributes: (see `CompilationOutput`)
+    """
+
     @staticmethod
     def flag() -> str:
         return "-S -emit-llvm"
@@ -492,11 +592,22 @@ class LLVMIRCompilationOutput(CompilationOutput):
         return ".ll"
 
     def read(self) -> str:
+        """Read the LLVM IR.
+
+        Returns:
+            str:
+                the LLVM IR read from the output file
+        """
         with open(str(self.filename), "r") as f:
             return f.read()
 
 
 class NoCompilationOutput(CompilationOutput):
+    """No compilation output.
+
+    Used in `parse_compilation_setting_from_string`.
+    """
+
     def __init__(self) -> None:
         super().__init__(Path(""))
 
@@ -518,6 +629,17 @@ CompilationOutputType = TypeVar("CompilationOutputType", bound=CompilationOutput
 
 @dataclass(frozen=True, kw_only=True)
 class CompilationResult(Generic[CompilationOutputType]):
+    """A compilation result
+
+    Attributes:
+        source_file (Path):
+            the (temporary) source file used by the compiler
+        output (CompilationOutputType):
+            the output of the compiler, e.g., an executable (ExeCompilationOutput)
+        stdout_stderr_output (str):
+            the captured stdout and stderr
+    """
+
     source_file: Path
     output: CompilationOutputType
     stdout_stderr_output: str
@@ -586,8 +708,7 @@ class CompilationSetting:
                 flags from the program are extracted and
                 the corresponding path are included in the output
             output (CompilationOutput):
-                the output path and potentially additional flags
-                based on the output kind
+                the ouput of the compilation
             include_language_flags (bool):
                 whether to include additional flags that specify
                 the source language and relevant linker flags
@@ -626,6 +747,22 @@ class CompilationSetting:
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
     ) -> CompilationResult[CompilationOutputType]:
+        """Compile a program with this setting.
+
+        Args:
+            program (ProgramType):
+                input program
+            output (CompilationOutputType):
+                the desired output, e.g., executable or object file
+            additional_flags (tuple[str, ...]):
+                additional flags used for the compilation
+            timeout (int | None):
+                timeout in seconds for the compilation command
+
+        Returns:
+            CompilationResult[CompilationOutputType]:
+                The result of the compilation (if successful).
+        """
         code_file = temporary_file(
             program.get_modified_code(), program.get_file_suffix()
         )
@@ -656,17 +793,19 @@ class CompilationSetting:
         """Preprocesses the program
 
         Args:
-        program (ProgramType): input program
-        additional_flags (tuple[str, ...]): additional flags used for the compilation
-        make_compiler_agnostic (bool):
-        if true will try to remove certain constructs (e.g., attributes)
-        such that the resulting program can be compiled with both gcc and clang
-        timeout (int | None): timeout in seconds for the compilation command
+            program (ProgramType):
+                input program
+            additional_flags (tuple[str, ...]):
+                additional flags used for the compilation
+            make_compiler_agnostic (bool):
+                if true will try to remove certain constructs (e.g., attributes)
+                such that the resulting program can be compiled with both gcc and clang
+            timeout (int | None):
+                timeout in seconds for the compilation command
 
         Returns:
-        Source:
-        the prepocessed program
-
+            Source:
+                the prepocessed program
         """
 
         result = self.compile_program(
@@ -717,24 +856,24 @@ def find_standard_include_paths(
         tuple[str,...]:
             the include paths
     """
-    with TemporaryFile(contents="", suffix=".c" if not cpp else ".cpp") as tf:
-        # run clang with verbose output on an empty temporary file
-        cmd = [str(clang.exe), str(tf), "-c", "-o/dev/null", "-v"]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        assert result.returncode == 0
+    tf = temporary_file("", suffix=".c" if not cpp else ".cpp")
+    # run clang with verbose output on an empty temporary file
+    cmd = [str(clang.exe), str(tf.name), "-c", "-o/dev/null", "-v"]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    assert result.returncode == 0
 
-        # parse the output and extract includes
-        output = result.stdout.decode("utf-8").split("\n")
-        start = (
-            next(
-                i
-                for i, line in enumerate(output)
-                if "#include <...> search starts here:" in line
-            )
-            + 1
+    # parse the output and extract includes
+    output = result.stdout.decode("utf-8").split("\n")
+    start = (
+        next(
+            i
+            for i, line in enumerate(output)
+            if "#include <...> search starts here:" in line
         )
-        end = next(i for i, line in enumerate(output) if "End of search list." in line)
-        return tuple(output[i].strip() for i in range(start, end))
+        + 1
+    )
+    end = next(i for i, line in enumerate(output) if "End of search list." in line)
+    return tuple(output[i].strip() for i in range(start, end))
 
 
 class ClangToolMode(Enum):
@@ -814,52 +953,52 @@ class ClangTool:
 
         """
 
-        with TemporaryFile(
+        tf = temporary_file(
             contents=program.get_modified_code(), suffix=program.get_file_suffix()
-        ) as tf:
-            match program.language:
-                case Language.C:
-                    standard_include_paths = self.standard_c_include_paths
-                case Language.CPP:
-                    standard_include_paths = self.standard_cxx_include_paths
+        )
+        match program.language:
+            case Language.C:
+                standard_include_paths = self.standard_c_include_paths
+            case Language.CPP:
+                standard_include_paths = self.standard_cxx_include_paths
 
-            cmd = list(
-                chain(
-                    (str(self.exe), str(tf)),
-                    tool_flags,
-                    (f"--extra-arg=-isystem{path}" for path in standard_include_paths),
-                    (f"--extra-arg={flag}" for flag in program.get_compilation_flags()),
-                    ("--",),
-                )
+        cmd = list(
+            chain(
+                (str(self.exe), str(tf.name)),
+                tool_flags,
+                (f"--extra-arg=-isystem{path}" for path in standard_include_paths),
+                (f"--extra-arg={flag}" for flag in program.get_compilation_flags()),
+                ("--",),
             )
-            try:
-                result = run_cmd(
-                    cmd,
-                    timeout=timeout,
-                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
-                )
-            except subprocess.CalledProcessError as e:
-                raise CompileError.from_called_process_exception(" ".join(cmd), e)
+        )
+        try:
+            result = run_cmd(
+                cmd,
+                timeout=timeout,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+            )
+        except subprocess.CalledProcessError as e:
+            raise CompileError.from_called_process_exception(" ".join(cmd), e)
 
-            match mode:
-                case ClangToolMode.CAPTURE_OUT_ERR:
+        match mode:
+            case ClangToolMode.CAPTURE_OUT_ERR:
+                return ClangToolResult(
+                    modified_source_code=None,
+                    stdout=result.stdout,
+                    stderr=result.stderr,
+                )
+            case ClangToolMode.READ_MODIFIED_FILE:
+                with open(str(tf), "r") as f:
                     return ClangToolResult(
-                        modified_source_code=None,
+                        modified_source_code=f.read(), stdout=None, stderr=None
+                    )
+            case ClangToolMode.CAPTURE_OUT_ERR_AND_READ_MODIFIED_FILED:
+                with open(str(tf), "r") as f:
+                    return ClangToolResult(
+                        modified_source_code=f.read(),
                         stdout=result.stdout,
                         stderr=result.stderr,
                     )
-                case ClangToolMode.READ_MODIFIED_FILE:
-                    with open(str(tf), "r") as f:
-                        return ClangToolResult(
-                            modified_source_code=f.read(), stdout=None, stderr=None
-                        )
-                case ClangToolMode.CAPTURE_OUT_ERR_AND_READ_MODIFIED_FILED:
-                    with open(str(tf), "r") as f:
-                        return ClangToolResult(
-                            modified_source_code=f.read(),
-                            stdout=result.stdout,
-                            stderr=result.stderr,
-                        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -904,33 +1043,31 @@ class CComp:
         # ccomp doesn't like these
         code = re.sub(r"__asm__ [^\)]*\)", r"", program.get_modified_code())
 
-        with TemporaryFile(contents=code, suffix=".c") as tf:
-            cmd = (
-                [
-                    str(self.exe),
-                    str(tf),
-                    "-interp",
-                    "-fall",
-                ]
-                + [
-                    f"-I{ipath}"
-                    for ipath in chain(
-                        program.include_paths, program.system_include_paths
-                    )
-                ]
-                + [f"-D{macro}" for macro in program.defined_macros]
+        tf = temporary_file(contents=code, suffix=".c")
+        cmd = (
+            [
+                str(self.exe),
+                str(tf.name),
+                "-interp",
+                "-fall",
+            ]
+            + [
+                f"-I{ipath}"
+                for ipath in chain(program.include_paths, program.system_include_paths)
+            ]
+            + [f"-D{macro}" for macro in program.defined_macros]
+        )
+        try:
+            run_cmd(
+                cmd,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                timeout=timeout,
             )
-            try:
-                run_cmd(
-                    cmd,
-                    additional_env={"TMPDIR": str(tempfile.gettempdir())},
-                    timeout=timeout,
-                )
-            except subprocess.CalledProcessError as e:
-                if debug:
-                    print(CompileError.from_called_process_exception(" ".join(cmd), e))
-                return False
-            return True
+        except subprocess.CalledProcessError as e:
+            if debug:
+                print(CompileError.from_called_process_exception(" ".join(cmd), e))
+            return False
+        return True
 
 
 def __compilation_setting_parser() -> argparse.ArgumentParser:
