@@ -742,6 +742,10 @@ class AsyncCompilationResult(Generic[CompilationOutputType]):
         """
         self.proc.wait(timeout)
 
+    def __del__(self) -> None:
+        if not self.proc.returncode:
+            self.proc.kill()
+
 
 @dataclass(frozen=True, kw_only=True)
 class CompilationSetting:
