@@ -60,9 +60,9 @@ from enum import Enum
 from itertools import chain
 from pathlib import Path
 from shutil import which
-from typing import IO, Generic, TypeVar
+from typing import Generic, TypeVar
 
-from diopter.utils import CommandOutput, run_cmd
+from diopter.utils import CommandOutput, run_cmd, temporary_file
 
 
 class Language(Enum):
@@ -382,27 +382,6 @@ class CompileError(Exception):
         if e.stderr:
             output += "\nSTDERR====\n" + e.stderr.decode("utf-8")
         return CompileError(output)
-
-
-def temporary_file(contents: str, suffix: str) -> IO[bytes]:
-    """Creates a named temporary file with extension
-    `suffix` and writes `contents` into it.
-
-    Args:
-        contents (str):
-            what to write in the temporary file
-        suffix (str):
-            the file's extension (e.g., ".c")
-    Returns:
-        tempfile.NamedTemporaryFile:
-            a temporary file that is automatically deleted when the object is
-            garbage collected
-    """
-    ntf = tempfile.NamedTemporaryFile(suffix=suffix)
-    if contents:
-        with open(ntf.name, "w") as f:
-            f.write(contents)
-    return ntf
 
 
 class CompilationOutput(ABC):
@@ -815,7 +794,7 @@ class CompilationSetting:
                 The result of the compilation (if successful).
         """
         code_file = temporary_file(
-            program.get_modified_code(), program.get_file_suffix()
+            contents=program.get_modified_code(), suffix=program.get_file_suffix()
         )
         cmd = self.get_compilation_cmd(
             (program, Path(code_file.name)), output, True
@@ -907,7 +886,7 @@ def find_standard_include_paths(
         tuple[str,...]:
             the include paths
     """
-    tf = temporary_file("", suffix=".c" if not cpp else ".cpp")
+    tf = temporary_file(contents="", suffix=".c" if not cpp else ".cpp")
     # run clang with verbose output on an empty temporary file
     cmd = [str(clang.exe), str(tf.name), "-c", "-o/dev/null", "-v"]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

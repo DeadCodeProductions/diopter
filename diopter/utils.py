@@ -94,9 +94,24 @@ class TempDirEnv:
         tempfile.tempdir = None
 
 
-def save_to_tmp_file(content: str, suffix: str | None = None) -> IO[bytes]:
-    ntf = tempfile.NamedTemporaryFile(suffix=suffix)
-    with open(ntf.name, "w") as f:
-        f.write(content)
+def temporary_file(
+    *, contents: str | None = None, suffix: str | None = None
+) -> IO[bytes]:
+    """Creates a named temporary file with extension
+    `suffix` and writes `contents` into it.
 
+    Args:
+        contents (str):
+            what to write in the temporary file
+        suffix (str):
+            the file's extension (e.g., ".c")
+    Returns:
+        tempfile.NamedTemporaryFile:
+            a temporary file that is automatically deleted when the object is
+            garbage collected
+    """
+    ntf = tempfile.NamedTemporaryFile(suffix=suffix)
+    if contents:
+        with open(ntf.name, "w") as f:
+            f.write(contents)
     return ntf

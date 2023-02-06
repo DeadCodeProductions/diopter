@@ -11,9 +11,8 @@ from diopter.compiler import (
     ObjectCompilationOutput,
     OptLevel,
     SourceProgram,
-    temporary_file,
 )
-from diopter.utils import run_cmd
+from diopter.utils import run_cmd, temporary_file
 
 
 def test_compiler_exe_from_path() -> None:
