@@ -1129,12 +1129,12 @@ class ClangTool:
                     stderr=result.stderr,
                 )
             case ClangToolMode.READ_MODIFIED_FILE:
-                with open(str(tf), "r") as f:
+                with open(str(tf.name), "r") as f:
                     return ClangToolResult(
                         modified_source_code=f.read(), stdout=None, stderr=None
                     )
             case ClangToolMode.CAPTURE_OUT_ERR_AND_READ_MODIFIED_FILED:
-                with open(str(tf), "r") as f:
+                with open(str(tf.name), "r") as f:
                     return ClangToolResult(
                         modified_source_code=f.read(),
                         stdout=result.stdout,
