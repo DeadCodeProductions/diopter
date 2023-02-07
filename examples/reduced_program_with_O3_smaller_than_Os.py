@@ -15,15 +15,12 @@ from diopter.compiler import (
 from diopter.generator import CSmithGenerator
 from diopter.reducer import Reducer, ReductionCallback
 from diopter.sanitizer import Sanitizer
-from diopter.utils import run_cmd
 
 
 def get_size(program: SourceProgram, setting: CompilationSetting) -> int:
-    result = setting.compile_program(program, ObjectCompilationOutput(None))
-    size_cmd_output = run_cmd(f"size {result.output.filename}").stdout
-    line = list(size_cmd_output.splitlines())[-1].strip()
-    s = line.split()[0]
-    return int(s)
+    return setting.compile_program(
+        program, ObjectCompilationOutput(None)
+    ).output.text_size()
 
 
 def filter(
