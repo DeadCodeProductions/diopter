@@ -529,6 +529,18 @@ class BinaryOutputMixin(ABC):
         with open(str(self.filename), "rb") as f:
             return f.read()
 
+    def text_size(self) -> int:
+        """Return the text section size of the binary.
+
+        Returns:
+            int:
+                The binary's text section size.
+        """
+        size_cmd_output = run_cmd(f"size {self.filename}").stdout
+        line = list(size_cmd_output.splitlines())[-1].strip()
+        s = line.split()[0]
+        return int(s)
+
 
 class ExeCompilationOutput(CompilationOutput, BinaryOutputMixin):
     """An executable compilation output.
