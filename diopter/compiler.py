@@ -227,6 +227,35 @@ class SourceProgram:
         return replace(self, code=new_code)
 
 
+def source_program_from_path(
+    path: Path
+):
+    """Creates a `SourceProgram` from a file.
+
+    Args:
+        path (Path): the path to the file
+
+    Returns:
+        SourceProgram:
+            the source program
+    """
+    with open(path, "r") as f:
+        return source_program_from_file(f)
+
+def source_program_from_file(
+    f: IO[str]
+):
+    """Creates a `SourceProgram` from a file.
+
+    Args:
+        f (IO[str]): the file
+
+    Returns:
+        SourceProgram:
+            the source program
+    """
+    return SourceProgram(code=f.read(), language=Language.CPP if f.name.endswith(".cpp") else Language.C)
+
 Revision = str
 
 
