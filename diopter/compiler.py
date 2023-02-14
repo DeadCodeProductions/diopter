@@ -683,7 +683,7 @@ class CompilationResult(Generic[CompilationOutputType]):
             the captured stdout and stderr
     """
 
-    source_file: Path
+    source_file: list[Path]
     output: CompilationOutputType
     stdout_stderr_output: str
 
@@ -810,7 +810,7 @@ class CompilationSetting:
 
     def get_compilation_cmd(
         self,
-        program: tuple[ProgramType, Path],
+        program: list[tuple[ProgramType, Path]],
         output: CompilationOutput,
         include_language_flags: bool = True,
     ) -> list[str]:
@@ -836,15 +836,18 @@ class CompilationSetting:
                     str(self.compiler.exe),
                     f"-{self.opt_level.name}",
                 ),
-                (program[0].language.get_language_flag(),)
+                (p[0].language.get_language_flag() for p in program)
+                # (program[0].language.get_language_flag(),)
                 if include_language_flags
                 else ("",),
                 self.flags,
                 (f"-I{path}" for path in self.include_paths),
                 (f"-isystem{path}" for path in self.system_include_paths),
                 (f"-D{macro}" for macro in self.macro_definitions),
-                program[0].get_compilation_flags(),
-                (str(program[1]),),
+                (p[0].get_compilation_flags() for p in program),
+                # (program[0].get_compilation_flags(),),
+                (str(p[1]) for p in program),
+                # (str(program[1]),),
             )
         )
 
@@ -856,7 +859,7 @@ class CompilationSetting:
 
     def compile_program(
         self,
-        program: SourceProgram,
+        program: list[SourceProgram],
         output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
@@ -877,11 +880,15 @@ class CompilationSetting:
             CompilationResult[CompilationOutputType]:
                 The result of the compilation (if successful).
         """
-        code_file = temporary_file(
-            contents=program.get_modified_code(), suffix=program.get_file_suffix()
-        )
+        code_files = []
+        for p in program:
+            code_files.append(temporary_file(contents=p.get_modified_code(), suffix=p.get_file_suffix()))
+
+        named_code_files = []
+        for c in code_files:
+            named_code_files.append((program[code_files.index(c)], Path(c.name)))
         cmd = self.get_compilation_cmd(
-            (program, Path(code_file.name)), output, True
+            named_code_files, output, True
         ) + list(additional_flags)
         try:
             command_output = run_cmd(
@@ -892,7 +899,7 @@ class CompilationSetting:
         except subprocess.CalledProcessError as e:
             raise CompileError.from_called_process_exception(" ".join(cmd), e)
         return CompilationResult(
-            source_file=Path(code_file.name),
+            source_files=[c.name for c in code_files],
             output=output,
             stdout_stderr_output=command_output.stdout + "\n" + command_output.stderr,
         )
