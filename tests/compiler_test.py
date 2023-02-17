@@ -196,3 +196,67 @@ def test_async_compile() -> None:
     object3 = res3.output.read()
 
     assert object2 == object3
+
+
+def test_link() -> None:
+    input_code1 = "int foo(int a){ return a + 1; }"
+    input_code2 = """
+                  int foo(int);
+                  int bar(int a){ return foo(a + 1); }
+                  """
+    input_code3 = """
+                  int bar(int);
+                  int main(int argc, char* argv){ return bar(argc); }
+                  """
+    program1 = SourceProgram(code=input_code1, language=Language.C)
+    program2 = SourceProgram(code=input_code2, language=Language.C)
+    program3 = SourceProgram(code=input_code3, language=Language.C)
+    compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
+    cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
+    res1 = cs.compile_program(
+        program1,
+        ObjectCompilationOutput(),
+    )
+    res2 = cs.compile_program(
+        program2,
+        ObjectCompilationOutput(),
+    )
+    res3 = cs.compile_program(
+        program3,
+        ObjectCompilationOutput(),
+    )
+    exe_res1 = cs.link_objects(
+        (res1.output, res2.output, res3.output), ExeCompilationOutput()
+    )
+    exe_res1.output.strip_symbols()
+    exe_res2 = cs.link_objects_async(
+        (res1.output, res2.output, res3.output), ExeCompilationOutput()
+    ).result()
+    exe_res2.output.strip_symbols()
+
+    code_file1 = temporary_file(
+        contents=program1.code, suffix=program1.get_file_suffix()
+    )
+    code_file2 = temporary_file(
+        contents=program2.code, suffix=program2.get_file_suffix()
+    )
+    code_file3 = temporary_file(
+        contents=program3.code, suffix=program3.get_file_suffix()
+    )
+    object_file1 = temporary_file(contents="", suffix=".o")
+    object_file2 = temporary_file(contents="", suffix=".o")
+    object_file3 = temporary_file(contents="", suffix=".o")
+    run_cmd(f"{compiler.exe} -c -O2 {code_file1.name} -o {object_file1.name}")
+    run_cmd(f"{compiler.exe} -c -O2 {code_file2.name} -o {object_file2.name}")
+    run_cmd(f"{compiler.exe} -c -O2 {code_file3.name} -o {object_file3.name}")
+
+    exe3_file = temporary_file(contents="", suffix=".exe")
+    run_cmd(
+        f"{compiler.exe} -O2 {object_file1.name} {object_file2.name} "
+        f"{object_file3.name} -o {exe3_file.name}"
+    )
+
+    assert which(exe3_file.name)
+    exe3 = strip_and_read_binary(Path(exe3_file.name))
+    assert exe3 == exe_res1.output.read()
+    assert exe3 == exe_res2.output.read()
