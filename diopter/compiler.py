@@ -61,7 +61,7 @@ from itertools import chain
 from pathlib import Path
 from shutil import which
 from subprocess import Popen
-from typing import IO, Any, Generic, TypeVar
+from typing import IO, Any, Generic, Sequence, TypeVar
 
 from diopter.utils import CommandOutput, run_cmd, run_cmd_async, temporary_file
 
@@ -729,15 +729,15 @@ class AsyncCompilationResult(Generic[CompilationOutputType]):
             the compiler command that is running in the subprocess
         proc (Popen[Any]):
             the running subprocess
-        code_file (IO[bytes]):
-            the file containing the source code
+        code_file (IO[bytes] | None):
+            if it exists, the file containing the source code
         output (CompilationOutputType):
             the pending compilation output
     """
 
     cmd: str
     proc: Popen[Any]
-    code_file: IO[bytes]
+    code_file: IO[bytes] | None
     output: CompilationOutputType
 
     def result(
@@ -768,7 +768,7 @@ class AsyncCompilationResult(Generic[CompilationOutputType]):
             raise CompileError(output)
 
         return CompilationResult(
-            source_file=Path(self.code_file.name),
+            source_file=Path(self.code_file.name if self.code_file is not None else ""),
             output=self.output,
             stdout_stderr_output=outs + "\n" + errs,
         )
@@ -959,7 +959,9 @@ class CompilationSetting:
         return AsyncCompilationResult(
             " ".join(cmd),
             run_cmd_async(
-                cmd, additional_env={"TMPDIR": str(tempfile.gettempdir())}, text=True
+                cmd,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                text=True,
             ),
             code_file,
             output,
@@ -1020,6 +1022,119 @@ class CompilationSetting:
             preprocessed_source = re.sub(r"_Float64", r"double", preprocessed_source)
 
         return program.with_preprocessed_code(preprocessed_source)
+
+    def get_linking_cmd(
+        self,
+        objects: Sequence[ObjectCompilationOutput],
+        output: ExeCompilationOutput,
+        additional_flags: tuple[str, ...] = tuple(),
+    ) -> list[str]:
+        """Assembles a compilation invocation for linking
+        the input `objects` to the `output`.
+
+        Args:
+            objects (Sequence[ObjectCompilationOutput]):
+                the object to be linked
+            output (ExeCompilationOutput):
+                the output executable
+            additional_flags (tuple[str, ...]):
+                additional flags used for the compilation
+        Returns:
+            list[str]:
+                The assembled compilation command
+        """
+        return list(
+            chain(
+                (
+                    str(self.compiler.exe),
+                    f"-{self.opt_level.name}",
+                ),
+                (str(obj.filename) for obj in objects),
+                self.flags,
+                additional_flags,
+                ("-o", str(output.filename)),
+            )
+        )
+
+    def link_objects(
+        self,
+        objects: Sequence[ObjectCompilationOutput],
+        output: ExeCompilationOutput,
+        additional_flags: tuple[str, ...] = tuple(),
+        timeout: int | None = None,
+    ) -> CompilationResult[ExeCompilationOutput]:
+        """Linking the input `objects` to the `output`.
+
+        Args:
+            objects (Sequence[ObjectCompilationOutput]):
+                the object to be linked
+            output (ExeCompilationOutput):
+                the output executable
+            additional_flags (tuple[str, ...]):
+                additional flags used for the compilation
+            timeout (int | None):
+                timeout in seconds for the compilation command
+
+        Returns:
+            CompilationResult[ExeCompilationOutputType]:
+                The result of the linking (if successful).
+        """
+        cmd = self.get_linking_cmd(
+            objects,
+            output,
+            additional_flags,
+        )
+        try:
+            command_output = run_cmd(
+                cmd,
+                timeout=timeout,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+            )
+        except subprocess.CalledProcessError as e:
+            raise CompileError.from_called_process_exception(" ".join(cmd), e)
+        return CompilationResult(
+            source_file=Path(""),
+            output=output,
+            stdout_stderr_output=command_output.stdout + "\n" + command_output.stderr,
+        )
+
+    def link_objects_async(
+        self,
+        objects: Sequence[ObjectCompilationOutput],
+        output: ExeCompilationOutput,
+        additional_flags: tuple[str, ...] = tuple(),
+    ) -> AsyncCompilationResult[ExeCompilationOutput]:
+        """Linking the input `objects` to the `output` asynchronously.
+
+        Args:
+            objects (Sequence[ObjectCompilationOutput]):
+                the object to be linked
+            output (ExeCompilationOutput):
+                the output executable
+            additional_flags (tuple[str, ...]):
+                additional flags used for the compilation
+            timeout (int | None):
+                timeout in seconds for the compilation command
+
+        Returns:
+            AsyncCompilationResult[ExeCompilationOutputType]:
+                The result of the linking (if successful).
+        """
+        cmd = self.get_linking_cmd(
+            objects,
+            output,
+            additional_flags,
+        )
+        return AsyncCompilationResult(
+            " ".join(cmd),
+            run_cmd_async(
+                cmd,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                text=True,
+            ),
+            None,
+            output,
+        )
 
 
 def find_standard_include_paths(
