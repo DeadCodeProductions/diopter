@@ -1,9 +1,10 @@
+from abc import ABC, abstractmethod
 from pathlib import Path
 from subprocess import DEVNULL
-from utils import run_cmd
-from typing import TypeAlias, Optional
 from tempfile import TemporaryDirectory
-from abc import ABC, abstractmethod
+from typing import Optional, TypeAlias
+
+from diopter.utils import run_cmd
 
 GitRevision: TypeAlias = str
 
@@ -11,21 +12,18 @@ GitRevision: TypeAlias = str
 class GitRepo:
     # XXX: add debug mode where everycommand prints something?
     def __init__(self, path: Path) -> None:
-        result = run_cmd("git -C {path} status", stdout=DEVNULL, stderr=DEVNULL)
-        if result.returncode != 0:
+        try:
+            run_cmd("git -C {path} status")
+        except Exception:
             raise ValueError(f"{path} is not a git repository")
         self.path = path
 
     def current_branch(self) -> GitRevision:
-        return (
-            run_cmd(
-                f"git -C {self.path} branch --show-current",
-                capture_output=True,
-                check=True,
-            )
-            .stdout.decode("utf-8")
-            .strip()
-        )
+        return run_cmd(
+            f"git -C {self.path} branch --show-current",
+            capture_output=True,
+            check=True,
+        ).stdout
 
     def add_worktree(
         self,
@@ -50,7 +48,6 @@ class GitRepo:
         worktree_path: Path,
         force: bool = True,
     ) -> None:
-
         cmd = f"git -C {self.path} worktree remove {worktree_path}"
         if force:
             cmd += " --force"
@@ -63,7 +60,7 @@ def rev_parse(worktree_dir: Path, rev: str) -> GitRevision:
         f"git -C {worktree_dir} rev-parse {rev}",
         check=True,
         capture_output=True,
-    ).stdout.decode("utf-8")
+    ).stdout
 
 
 def parse_bisect_head(worktree_dir: Path) -> GitRevision:
@@ -108,13 +105,15 @@ def bisect_bad(
 
 
 def currently_bisecting(worktree_dir: Path) -> bool:
-    return (
+    try:
         run_cmd(
             f"git -C {worktree_dir} bisect log",
+            check=False,
             capture_output=True,
-        ).returncode
-        == 0
-    )
+        )
+    except Exception:
+        return False
+    return True
 
 
 class BisectionCallback(ABC):
