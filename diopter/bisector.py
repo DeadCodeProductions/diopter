@@ -1,5 +1,6 @@
 from pathlib import Path
-from subprocess import run, DEVNULL
+from subprocess import DEVNULL
+from utils import run_cmd
 from typing import TypeAlias, Optional
 from tempfile import TemporaryDirectory
 from abc import ABC, abstractmethod
@@ -10,13 +11,15 @@ GitRevision: TypeAlias = str
 class GitRepo:
     # XXX: add debug mode where everycommand prints something?
     def __init__(self, path: Path) -> None:
-        result = run("git -C {path} status", stdout=DEVNULL, stderr=DEVNULL)
+        result = run_cmd("git -C {path} status",
+                         stdout=DEVNULL,
+                         stderr=DEVNULL)
         if result.returncode != 0:
             raise ValueError(f"{path} is not a git repository")
         self.path = path
 
     def current_branch(self) -> GitRevision:
-        return (run(
+        return (run_cmd(
             f"git -C {self.path} branch --show-current",
             capture_output=True,
             check=True,
@@ -38,7 +41,7 @@ class GitRepo:
         if no_checkout:
             cmd += " --no-checkout"
 
-        run(cmd, check=True, stdout=DEVNULL, stderr=DEVNULL)
+        run_cmd(cmd, check=True, stdout=DEVNULL, stderr=DEVNULL)
 
     def remove_worktree(
         self,
@@ -50,11 +53,11 @@ class GitRepo:
         if force:
             cmd += " --force"
 
-        run(cmd, check=True, stdout=DEVNULL, stderr=DEVNULL)
+        run_cmd(cmd, check=True, stdout=DEVNULL, stderr=DEVNULL)
 
 
 def rev_parse(worktree_dir: Path, rev: str) -> GitRevision:
-    return run(
+    return run_cmd(
         f"git -C {worktree_dir} rev-parse {rev}",
         check=True,
         capture_output=True,
@@ -74,28 +77,28 @@ def bisect_start(
     # TODO: make this a context manager?
     cmd = (f"git -C {worktree_dir} bisect start" +
            " --no-checkout" if no_checkout else "" + f" {bad} {good}")
-    run(cmd, check=True)
+    run_cmd(cmd, check=True)
     return parse_bisect_head(worktree_dir)
 
 
 def bisect_skip(worktree_dir: Path, ) -> None:
     cmd = f"git -C {worktree_dir} bisect skip"
-    run(cmd, check=True)
+    run_cmd(cmd, check=True)
 
 
 def bisect_good(worktree_dir: Path, ) -> None:
     cmd = f"git -C {worktree_dir} bisect good"
-    run(cmd, check=True)
+    run_cmd(cmd, check=True)
 
 
 def bisect_bad(worktree_dir: Path, ) -> None:
     cmd = f"git -C {worktree_dir} bisect bad"
-    run(cmd, check=True)
+    run_cmd(cmd, check=True)
 
 
 def currently_bisecting(worktree_dir: Path) -> bool:
-    return run(
-        f"git -C {worktree_dir} bisect log".split(" "),
+    return run_cmd(
+        f"git -C {worktree_dir} bisect log",
         capture_output=True,
     ).returncode == 0
 
