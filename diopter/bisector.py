@@ -98,8 +98,6 @@ def currently_bisecting(worktree_dir: Path) -> bool:
         f"git -C {worktree_dir} bisect log".split(" "),
         capture_output=True,
     ).returncode == 0
-    pass
-    # count visualize lines?
 
 
 class BisectionCallback(ABC):
