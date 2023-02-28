@@ -11,19 +11,21 @@ GitRevision: TypeAlias = str
 class GitRepo:
     # XXX: add debug mode where everycommand prints something?
     def __init__(self, path: Path) -> None:
-        result = run_cmd("git -C {path} status",
-                         stdout=DEVNULL,
-                         stderr=DEVNULL)
+        result = run_cmd("git -C {path} status", stdout=DEVNULL, stderr=DEVNULL)
         if result.returncode != 0:
             raise ValueError(f"{path} is not a git repository")
         self.path = path
 
     def current_branch(self) -> GitRevision:
-        return (run_cmd(
-            f"git -C {self.path} branch --show-current",
-            capture_output=True,
-            check=True,
-        ).stdout.decode("utf-8").strip())
+        return (
+            run_cmd(
+                f"git -C {self.path} branch --show-current",
+                capture_output=True,
+                check=True,
+            )
+            .stdout.decode("utf-8")
+            .strip()
+        )
 
     def add_worktree(
         self,
@@ -75,43 +77,55 @@ def bisect_start(
     no_checkout: bool = True,
 ) -> GitRevision:
     # TODO: make this a context manager?
-    cmd = (f"git -C {worktree_dir} bisect start" +
-           " --no-checkout" if no_checkout else "" + f" {bad} {good}")
+    cmd = (
+        f"git -C {worktree_dir} bisect start" + " --no-checkout"
+        if no_checkout
+        else "" + f" {bad} {good}"
+    )
     run_cmd(cmd, check=True)
     return parse_bisect_head(worktree_dir)
 
 
-def bisect_skip(worktree_dir: Path, ) -> None:
+def bisect_skip(
+    worktree_dir: Path,
+) -> None:
     cmd = f"git -C {worktree_dir} bisect skip"
     run_cmd(cmd, check=True)
 
 
-def bisect_good(worktree_dir: Path, ) -> None:
+def bisect_good(
+    worktree_dir: Path,
+) -> None:
     cmd = f"git -C {worktree_dir} bisect good"
     run_cmd(cmd, check=True)
 
 
-def bisect_bad(worktree_dir: Path, ) -> None:
+def bisect_bad(
+    worktree_dir: Path,
+) -> None:
     cmd = f"git -C {worktree_dir} bisect bad"
     run_cmd(cmd, check=True)
 
 
 def currently_bisecting(worktree_dir: Path) -> bool:
-    return run_cmd(
-        f"git -C {worktree_dir} bisect log",
-        capture_output=True,
-    ).returncode == 0
+    return (
+        run_cmd(
+            f"git -C {worktree_dir} bisect log",
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 class BisectionCallback(ABC):
-
     @abstractmethod
     def check(self, commit: GitRevision) -> Optional[bool]:
         pass
 
 
-def bisect(repo: GitRepo, good: GitRevision, bad: GitRevision,
-           callback: BisectionCallback) -> GitRevision | None:
+def bisect(
+    repo: GitRepo, good: GitRevision, bad: GitRevision, callback: BisectionCallback
+) -> GitRevision | None:
     with TemporaryDirectory() as tempdir:
         worktree_dir = Path(tempdir)
         # The context manager should be the worktree
