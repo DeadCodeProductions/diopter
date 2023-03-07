@@ -89,6 +89,8 @@ class Sanitizer:
             seconds to wait before aborting when executing the program (ub/asan)
         ccomp_timeout  (int):
             seconds to wait before aborting when interpreting the program with ccomp
+        debug (bool):
+            if True then additional info is printed when sanitizing programs
     """
 
     default_warnings = (
@@ -147,6 +149,7 @@ class Sanitizer:
         compilation_timeout: int = 8,
         execution_timeout: int = 4,
         ccomp_timeout: int = 16,
+        debug: bool = False,
     ):
         """
         Args:
@@ -182,6 +185,8 @@ class Sanitizer:
                 (relevant for use_ub_sanitizer)
             ccomp_timeout (int):
                 after how many seconds to abort interpreting with ccomp and fail
+            debug (bool):
+                if True then additional info is printed when sanitizing programs
         """
         self.gcc = gcc if gcc else CompilerExe.get_system_gcc()
         self.clang = clang if clang else CompilerExe.get_system_clang()
@@ -198,8 +203,11 @@ class Sanitizer:
         self.compilation_timeout = compilation_timeout
         self.execution_timeout = execution_timeout
         self.ccomp_timeout = ccomp_timeout
+        self.debug = debug
 
-    def check_for_compiler_warnings(self, program: SourceProgram) -> SanitizationResult:
+    def check_for_compiler_warnings(
+        self, program: SourceProgram, debug: bool = False
+    ) -> SanitizationResult:
         """Checks the program for compiler warnings.
 
         Compiles program with self.gcc and self.clang and reports
@@ -209,6 +217,8 @@ class Sanitizer:
         Args:
             program (SourceProgram):
                 The program to check.
+            debug (bool):
+                If true, additional info will be printed in case of failure
 
         Returns:
             SanitizationResult:
@@ -230,7 +240,9 @@ class Sanitizer:
                 )
             except subprocess.TimeoutExpired:
                 return SanitizationResult(timeout=True)
-            except CompileError:
+            except CompileError as e:
+                if debug or self.debug:
+                    print(e)
                 return SanitizationResult(check_warnings_failed=True)
             for line in result.stdout_stderr_output.splitlines():
                 for checked_warning in self.checked_warnings:
@@ -299,7 +311,7 @@ class Sanitizer:
             except subprocess.TimeoutExpired:
                 return SanitizationResult(timeout=True)
             except CompileError as e:
-                if debug:
+                if debug or self.debug:
                     print(e)
                 return SanitizationResult(ub_address_sanitizer_failed=True)
 
@@ -309,7 +321,7 @@ class Sanitizer:
             except subprocess.TimeoutExpired:
                 return SanitizationResult(timeout=True)
             except subprocess.CalledProcessError as e:
-                if debug:
+                if debug or self.debug:
                     print(e.stdout)
                     print(e.stderr)
                 return SanitizationResult(ub_address_sanitizer_failed=True)
