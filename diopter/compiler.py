@@ -559,12 +559,16 @@ class ExeCompilationOutput(CompilationOutput, BinaryOutputMixin):
             # check for permissions if the file exists?
             pass
 
-    def run(self, flags: tuple[str, ...] = tuple()) -> CommandOutput:
+    def run(
+        self, flags: tuple[str, ...] = tuple(), timeout: int | None = None
+    ) -> CommandOutput:
         """Runs the exe with the provided flags.
 
         Args:
             flags (tuple[str]):
                 flags passed to the exe
+            timeout (int | None):
+                if not None, the execution will abort after `timeout` seconds
         Returns:
             CommandOutput:
                 the captured stdout and stderr
