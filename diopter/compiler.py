@@ -573,7 +573,7 @@ class ExeCompilationOutput(CompilationOutput, BinaryOutputMixin):
             CommandOutput:
                 the captured stdout and stderr
         """
-        return run_cmd(f"{self.filename} {' '.join(flags)}")
+        return run_cmd(f"{self.filename} {' '.join(flags)}", timeout=timeout)
 
     @staticmethod
     def flag() -> str:
