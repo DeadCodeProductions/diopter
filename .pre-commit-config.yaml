@@ -16,5 +16,5 @@ repos:
     rev: v0.991
     hooks:
     -   id: mypy
-        additional_dependencies: [ccbuilder >= 0.0.9]
+        additional_dependencies: [ccbuilder >= 0.0.9, pytest >= 7.0.0]
         args: [--strict]

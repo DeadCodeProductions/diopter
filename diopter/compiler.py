@@ -116,9 +116,6 @@ class Language(Enum):
                 return ".cpp"
 
 
-ProgramType = TypeVar("ProgramType", bound="SourceProgram")
-
-
 @dataclass(frozen=True, kw_only=True)
 class SourceProgram:
     """A C or C++ source program together with flags, includes and macro definitions.
@@ -198,15 +195,15 @@ class SourceProgram:
         return self.code
 
     def with_preprocessed_code(
-        self: ProgramType, preprocessed_code: str
-    ) -> ProgramType:
+        self: SourceProgram, preprocessed_code: str
+    ) -> SourceProgram:
         """Returns a new program with its code replaced with `preprocessed_code`
 
         `CompilerSetting.preprocess_program` calls this. It can be overriden by
         subclasses.
 
         Returns:
-            ProgramType:
+            SourceProgram:
                 the new program
         """
         return replace(
@@ -217,14 +214,80 @@ class SourceProgram:
             system_include_paths=tuple(),
         )
 
-    def with_code(self: ProgramType, new_code: str) -> ProgramType:
+    def with_code(self: SourceProgram, new_code: str) -> SourceProgram:
         """Returns a new program with its code replaced with new_code
 
         Returns:
-            ProgramType:
+            SourceProgram:
                 the new program
         """
         return replace(self, code=new_code)
+
+
+@dataclass(frozen=True, kw_only=True)
+class SourceFile:
+    """A C or C++ source program together with flags, includes and macro definitions.
+
+    Attributes:
+        path (str):
+            the path to the source file (this or code must be set)
+        language (Language):
+            the program's language
+        defined_macros (tuple[str,...]):
+            macros that will be defined when compiling this program
+        include_paths (tuple[str,...]):
+            include paths which will be passed to the compiler (with -I)
+        system_include_paths (tuple[str,...]):
+            system include paths which will be passed to the compiler (with -isystem)
+        flags (tuple[str,...]):
+            flags, prefixed with a dash ("-") that will be passed to the compiler
+    """
+
+    filename: Path
+    language: Language
+    defined_macros: tuple[str, ...] = tuple()
+    include_paths: tuple[str, ...] = tuple()
+    system_include_paths: tuple[str, ...] = tuple()
+    flags: tuple[str, ...] = tuple()
+
+    def __post_init__(self) -> None:
+        for macro in self.defined_macros:
+            assert not macro.strip().startswith("-D")
+
+        # (system) include paths must actually by paths and not include a flag
+        for path in self.include_paths:
+            assert not path.strip().startswith("-I")
+        for path in self.system_include_paths:
+            assert not path.strip().startswith("-isystem")
+
+        # XXX: can't check flags as the args and flags may be split
+
+    def get_compilation_flags(self) -> tuple[str, ...]:
+        """Returns flags based on the program's flags, include paths and macro defs.
+
+        Returns:
+            tuple[str, ...]:
+                the flags
+        """
+
+        return tuple(
+            chain(
+                self.flags,
+                (f"-D{m}" for m in self.defined_macros),
+                (f"-I{i}" for i in self.include_paths),
+                (f"-isystem{i}" for i in self.system_include_paths),
+            )
+        )
+
+    def get_file_suffix(self) -> str:
+        """Returns a corresponding file suffix for this program.
+
+        Returns:
+            str:
+                file suffix
+        """
+
+        return self.language.to_suffix()
 
 
 Revision = str
@@ -814,7 +877,7 @@ class CompilationSetting:
 
     def get_compilation_cmd(
         self,
-        program: tuple[ProgramType, Path],
+        program: tuple[SourceProgram | SourceFile, Path],
         output: CompilationOutput,
         include_language_flags: bool = True,
     ) -> list[str]:
@@ -822,7 +885,7 @@ class CompilationSetting:
         input programs and the output.
 
         Args:
-            program (tuple[ProgramType, Path]):
+            program (tuple[SourceProgram, Path]):
                 flags from the program are extracted and
                 the corresponding path are included in the output
             output (CompilationOutput):
@@ -860,7 +923,7 @@ class CompilationSetting:
 
     def compile_program(
         self,
-        program: SourceProgram,
+        program: SourceProgram | SourceFile,
         output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
@@ -868,7 +931,7 @@ class CompilationSetting:
         """Compile a program with this setting.
 
         Args:
-            program (ProgramType):
+            program (SourceProgram):
                 input program
             output (CompilationOutputType):
                 the desired output, e.g., executable or object file
@@ -881,9 +944,16 @@ class CompilationSetting:
             CompilationResult[CompilationOutputType]:
                 The result of the compilation (if successful).
         """
-        code_file = temporary_file(
-            contents=program.get_modified_code(), suffix=program.get_file_suffix()
-        )
+        code_file: IO[bytes]
+        match program:
+            case SourceProgram():
+                code_file = temporary_file(
+                    contents=program.get_modified_code(),
+                    suffix=program.get_file_suffix(),
+                )
+            case SourceFile():
+                code_file = open(program.filename, "rb")
+
         cmd = self.get_compilation_cmd(
             (program, Path(code_file.name)), output, True
         ) + list(additional_flags)
@@ -891,7 +961,7 @@ class CompilationSetting:
             command_output = run_cmd(
                 cmd,
                 timeout=timeout,
-                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                additional_env={"TMPDIR": tempfile.gettempdir()},
             )
         except subprocess.CalledProcessError as e:
             raise CompileError.from_called_process_exception(" ".join(cmd), e)
@@ -903,7 +973,7 @@ class CompilationSetting:
 
     def compile_program_async(
         self,
-        program: SourceProgram,
+        program: SourceProgram | SourceFile,
         output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
     ) -> AsyncCompilationResult[CompilationOutputType]:
@@ -914,7 +984,7 @@ class CompilationSetting:
         interact with the compiler, e.g., via IPC
 
         Args:
-            program (ProgramType):
+            program (SourceProgram):
                 input program
             output (CompilationOutputType):
                 the desired output, e.g., executable or object file
@@ -925,9 +995,15 @@ class CompilationSetting:
             AsyncCompilationResult[CompilationOutputType]:
                 The result of the compilation (if successful).
         """
-        code_file = temporary_file(
-            contents=program.get_modified_code(), suffix=program.get_file_suffix()
-        )
+        code_file: IO[bytes]
+        match program:
+            case SourceProgram():
+                code_file = temporary_file(
+                    contents=program.get_modified_code(),
+                    suffix=program.get_file_suffix(),
+                )
+            case SourceFile():
+                code_file = open(program.filename, "rb")
         cmd = self.get_compilation_cmd(
             (program, Path(code_file.name)), output, True
         ) + list(additional_flags)
@@ -935,7 +1011,7 @@ class CompilationSetting:
             " ".join(cmd),
             run_cmd_async(
                 cmd,
-                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                additional_env={"TMPDIR": tempfile.gettempdir()},
                 text=True,
             ),
             code_file,
@@ -944,15 +1020,15 @@ class CompilationSetting:
 
     def preprocess_program(
         self,
-        program: ProgramType,
+        program: SourceProgram,
         make_compiler_agnostic: bool = False,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
-    ) -> ProgramType:
+    ) -> SourceProgram:
         """Preprocesses the program
 
         Args:
-            program (ProgramType):
+            program (SourceProgram):
                 input program
             additional_flags (tuple[str, ...]):
                 additional flags used for the compilation
@@ -963,7 +1039,7 @@ class CompilationSetting:
                 timeout in seconds for the compilation command
 
         Returns:
-            ProgramType:
+            SourceProgram:
                 the prepocessed program
         """
 
@@ -1370,20 +1446,28 @@ def __compilation_setting_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o")
     parser.add_argument("-c", action="store_true")
     parser.add_argument("-S", action="store_true")
+    parser.add_argument("-MT", type=str, action="append")
+    parser.add_argument("-MQ", type=str, action="append")
 
     return parser
 
 
 def parse_compilation_setting_from_string(
     s: str,
-) -> tuple[CompilationSetting, list[str], CompilationOutput]:
+) -> tuple[
+    CompilationSetting, list[SourceFile | ObjectCompilationOutput], CompilationOutput
+]:
     """Parse the compilation setting provided in `s`.
 
     Args:
         s (str): compilation command string to be parsed.
 
     Returns:
-        tuple[CompilationSetting, list[str], CompilationOutput]:
+        tuple[
+            CompilationSetting,
+            list[SourceProgram | ObjectCompilationOutput],
+            CompilationOutput
+        ]:
             - CompilationSetting
             - source files provided
             - specified compilation output file and kind
@@ -1394,14 +1478,27 @@ def parse_compilation_setting_from_string(
     )
     CPP_EXT = (".cc", ".cxx", ".cpp")
     C_EXT = (".c",)
+    OBJ_EXT = (".o",)
 
-    sources: list[str] = []
+    sources: list[SourceFile | ObjectCompilationOutput] = []
     flags: list[str] = []
     for arg in rest:
-        if arg.lower().endswith(CPP_EXT + C_EXT):
-            sources.append(arg)
+        if arg.lower().endswith(CPP_EXT):
+            sources.append(SourceFile(language=Language.CPP, filename=Path(arg)))
+        elif arg.lower().endswith(C_EXT):
+            sources.append(SourceFile(language=Language.C, filename=Path(arg)))
+        elif arg.lower().endswith(OBJ_EXT):
+            sources.append(ObjectCompilationOutput(filename=Path(arg)))
         else:
             flags.append(arg)
+
+    # append flags caputred by the parser
+    if parsed_args.MT:
+        for mt in parsed_args.MT:
+            flags.extend(["-MT", mt])
+    if parsed_args.MQ:
+        for mq in parsed_args.MQ:
+            flags.extend(["-MQ", mq])
 
     include_paths: tuple[str, ...] = tuple(parsed_args.I) if parsed_args.I else tuple()
     system_include_paths: tuple[str, ...] = (
