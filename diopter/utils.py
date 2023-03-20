@@ -118,7 +118,7 @@ class TempDirEnv:
 
 
 def temporary_file(
-    *, contents: str | None = None, suffix: str | None = None
+    *, contents: str | None = None, suffix: str | None = None, delete: bool = True
 ) -> IO[bytes]:
     """Creates a named temporary file with extension
     `suffix` and writes `contents` into it.
@@ -133,7 +133,7 @@ def temporary_file(
             a temporary file that is automatically deleted when the object is
             garbage collected
     """
-    ntf = tempfile.NamedTemporaryFile(suffix=suffix)
+    ntf = tempfile.NamedTemporaryFile(suffix=suffix, delete=delete)
     if contents:
         with open(ntf.name, "w") as f:
             f.write(contents)
