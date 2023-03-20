@@ -3,7 +3,10 @@ from pathlib import Path
 import pytest
 
 from diopter.compiler import (
+    ExeCompilationOutput,
     Language,
+    ObjectCompilationOutput,
+    SourceFile,
     SourceProgram,
     parse_compilation_setting_from_string,
 )
@@ -28,7 +31,9 @@ def real_world_compiler_invocations() -> list[str]:
 )
 def test_parsing_compile_settings(line: str) -> None:
     csetting, sources, output = parse_compilation_setting_from_string(line)
-    assert len(sources) <= 1, sources
+    assert (
+        len(sources) <= 1
+    ), f"\nline {line}\n sources {[source.filename for source in sources]}"
     for i, flag in enumerate(csetting.flags):
         if flag.endswith(".o"):
             assert csetting.flags[i - 1] in ["-MT", "-MQ"], (
@@ -56,14 +61,15 @@ def test_parsing_compile_settings(line: str) -> None:
     for macro in csetting.macro_definitions:
         assert not macro.startswith("-D"), macro
 
+    new_sources: list[SourceFile | ObjectCompilationOutput]
     if not sources:
-        new_sources = ["dummy_source"]
+        new_sources = [SourceFile(filename=Path("dummy_source"), language=Language.CPP)]
     else:
         new_sources = sources
 
     cmd = " ".join(
         csetting.get_compilation_cmd(
-            (SourceProgram(code="", language=Language.CPP), Path(new_sources[0])),
+            (SourceProgram(code="", language=Language.CPP), new_sources[0].filename),
             output,
             False,
         )
@@ -92,11 +98,44 @@ def test_parsing_compile_settings(line: str) -> None:
     cmd_cpp = canonicalize_whitespace(
         " ".join(
             csetting.get_compilation_cmd(
-                (SourceProgram(code="", language=Language.CPP), Path(new_sources[0])),
+                (
+                    SourceProgram(code="", language=Language.CPP),
+                    new_sources[0].filename,
+                ),
                 output,
                 True,
             )
-            + sources
+            + [str(source.filename) for source in new_sources]
         ).replace("dummy_source", "")
     )
     assert set(cmd_cpp.split()) - set(line.split()) == set((("-xc++",)))
+
+
+def test_multi_source_file_parsing() -> None:
+    line = "g++ test1.cpp test2.cpp -O3 -o test"
+    csetting, sources, output = parse_compilation_setting_from_string(line)
+    assert len(sources) == 2
+
+    assert isinstance(sources[0], SourceFile)
+    assert sources[0].language == Language.CPP
+    assert sources[0].filename == Path("test1.cpp")
+
+    assert isinstance(sources[1], SourceFile)
+    assert sources[1].language == Language.CPP
+    assert sources[1].filename == Path("test2.cpp")
+
+    assert isinstance(output, ExeCompilationOutput)
+    assert output.filename == Path("test")
+
+
+def test_multi_object_file_parsing() -> None:
+    line = "g++ test1.o test2.o -O3 -o test -MT test.o -MQ test.o"
+    csetting, sources, output = parse_compilation_setting_from_string(line)
+    assert len(sources) == 2
+    assert all(isinstance(source, ObjectCompilationOutput) for source in sources)
+
+    assert sources[0].filename == Path("test1.o")
+    assert sources[1].filename == Path("test2.o")
+
+    assert isinstance(output, ExeCompilationOutput)
+    assert output.filename == Path("test")

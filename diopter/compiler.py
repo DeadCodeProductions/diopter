@@ -116,12 +116,23 @@ class Language(Enum):
                 return ".cpp"
 
 
-ProgramType = TypeVar("ProgramType", bound="SourceProgram")
+@dataclass(frozen=True)
+class SourcePath:
+    filename: Path
+    tempfile: IO[bytes] | None
+
+    def __del__(self) -> None:
+        """Delete the temporary file if it still exists"""
+        if self.tempfile is None:
+            return
+        if Path(self.filename).exists():
+            os.remove(self.filename)
 
 
 @dataclass(frozen=True, kw_only=True)
-class SourceProgram:
-    """A C or C++ source program together with flags, includes and macro definitions.
+class Source(ABC):
+    """A C or C++ base class for source programs together
+       with flags, includes and macro definitions.
 
     Attributes:
         code (str):
@@ -138,7 +149,6 @@ class SourceProgram:
             flags, prefixed with a dash ("-") that will be passed to the compiler
     """
 
-    code: str
     language: Language
     defined_macros: tuple[str, ...] = tuple()
     include_paths: tuple[str, ...] = tuple()
@@ -186,6 +196,44 @@ class SourceProgram:
 
         return self.language.to_suffix()
 
+    @abstractmethod
+    def get_filename(self) -> SourcePath:
+        pass
+
+
+ProgramType = TypeVar("ProgramType", bound="SourceProgram")
+
+
+@dataclass(frozen=True, kw_only=True)
+class SourceProgram(Source):
+    """A C or C++ source program together with flags, includes and macro definitions.
+
+    Attributes:
+        code (str):
+            the source code
+        language (Language):
+            the program's language
+        defined_macros (tuple[str,...]):
+            macros that will be defined when compiling this program
+        include_paths (tuple[str,...]):
+            include paths which will be passed to the compiler (with -I)
+        system_include_paths (tuple[str,...]):
+            system include paths which will be passed to the compiler (with -isystem)
+        flags (tuple[str,...]):
+            flags, prefixed with a dash ("-") that will be passed to the compiler
+    """
+
+    code: str
+
+    def get_filename(self) -> SourcePath:
+        tf = temporary_file(
+            contents=self.get_modified_code(),
+            suffix=self.get_file_suffix(),
+            delete=False,
+        )
+        tf.close()
+        return SourcePath(Path(tf.name), tf)
+
     def get_modified_code(self) -> str:
         """Returns `self.code` potentially modified to be used in `CompilationSetting`.
 
@@ -225,6 +273,36 @@ class SourceProgram:
                 the new program
         """
         return replace(self, code=new_code)
+
+
+@dataclass(frozen=True, kw_only=True)
+class SourceFile(Source):
+    """A C or C++ source file together with flags, includes and macro definitions.
+
+    Attributes:
+        path (str):
+            the path to the source file (this or code must be set)
+        language (Language):
+            the program's language
+        defined_macros (tuple[str,...]):
+            macros that will be defined when compiling this program
+        include_paths (tuple[str,...]):
+            include paths which will be passed to the compiler (with -I)
+        system_include_paths (tuple[str,...]):
+            system include paths which will be passed to the compiler (with -isystem)
+        flags (tuple[str,...]):
+            flags, prefixed with a dash ("-") that will be passed to the compiler
+    """
+
+    filename: Path
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        # TODO: fix testing and re-enable the assertion
+        # assert self.filename.is_file()
+
+    def get_filename(self) -> SourcePath:
+        return SourcePath(self.filename, None)
 
 
 Revision = str
@@ -704,15 +782,15 @@ class AsyncCompilationResult(Generic[CompilationOutputType]):
             the compiler command that is running in the subprocess
         proc (Popen[Any]):
             the running subprocess
-        code_file (IO[bytes] | None):
-            if it exists, the file containing the source code
+        code_file (SourcePath | None):
+            the source used to compile the program if it exists
         output (CompilationOutputType):
             the pending compilation output
     """
 
     cmd: str
     proc: Popen[Any]
-    code_file: IO[bytes] | None
+    code_file: SourcePath | None
     output: CompilationOutputType
 
     def result(
@@ -743,7 +821,9 @@ class AsyncCompilationResult(Generic[CompilationOutputType]):
             raise CompileError(output)
 
         return CompilationResult(
-            source_file=Path(self.code_file.name if self.code_file is not None else ""),
+            source_file=Path(
+                self.code_file.filename if self.code_file is not None else ""
+            ),
             output=self.output,
             stdout_stderr_output=outs + "\n" + errs,
         )
@@ -814,7 +894,7 @@ class CompilationSetting:
 
     def get_compilation_cmd(
         self,
-        program: tuple[ProgramType, Path],
+        program: tuple[Source, Path],
         output: CompilationOutput,
         include_language_flags: bool = True,
     ) -> list[str]:
@@ -822,7 +902,7 @@ class CompilationSetting:
         input programs and the output.
 
         Args:
-            program (tuple[ProgramType, Path]):
+            program (tuple[Source, Path]):
                 flags from the program are extracted and
                 the corresponding path are included in the output
             output (CompilationOutput):
@@ -860,7 +940,7 @@ class CompilationSetting:
 
     def compile_program(
         self,
-        program: SourceProgram,
+        program: Source,
         output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
         timeout: int | None = None,
@@ -868,7 +948,7 @@ class CompilationSetting:
         """Compile a program with this setting.
 
         Args:
-            program (ProgramType):
+            program (Source):
                 input program
             output (CompilationOutputType):
                 the desired output, e.g., executable or object file
@@ -881,29 +961,29 @@ class CompilationSetting:
             CompilationResult[CompilationOutputType]:
                 The result of the compilation (if successful).
         """
-        code_file = temporary_file(
-            contents=program.get_modified_code(), suffix=program.get_file_suffix()
-        )
+
+        code_file = program.get_filename()
+
         cmd = self.get_compilation_cmd(
-            (program, Path(code_file.name)), output, True
+            (program, Path(code_file.filename)), output, True
         ) + list(additional_flags)
         try:
             command_output = run_cmd(
                 cmd,
                 timeout=timeout,
-                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                additional_env={"TMPDIR": tempfile.gettempdir()},
             )
         except subprocess.CalledProcessError as e:
             raise CompileError.from_called_process_exception(" ".join(cmd), e)
         return CompilationResult(
-            source_file=Path(code_file.name),
+            source_file=code_file.filename,
             output=output,
             stdout_stderr_output=command_output.stdout + "\n" + command_output.stderr,
         )
 
     def compile_program_async(
         self,
-        program: SourceProgram,
+        program: Source,
         output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
     ) -> AsyncCompilationResult[CompilationOutputType]:
@@ -914,7 +994,7 @@ class CompilationSetting:
         interact with the compiler, e.g., via IPC
 
         Args:
-            program (ProgramType):
+            program (Source):
                 input program
             output (CompilationOutputType):
                 the desired output, e.g., executable or object file
@@ -925,17 +1005,15 @@ class CompilationSetting:
             AsyncCompilationResult[CompilationOutputType]:
                 The result of the compilation (if successful).
         """
-        code_file = temporary_file(
-            contents=program.get_modified_code(), suffix=program.get_file_suffix()
-        )
+        code_file = program.get_filename()
         cmd = self.get_compilation_cmd(
-            (program, Path(code_file.name)), output, True
+            (program, code_file.filename), output, True
         ) + list(additional_flags)
         return AsyncCompilationResult(
             " ".join(cmd),
             run_cmd_async(
                 cmd,
-                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+                additional_env={"TMPDIR": tempfile.gettempdir()},
                 text=True,
             ),
             code_file,
@@ -952,7 +1030,7 @@ class CompilationSetting:
         """Preprocesses the program
 
         Args:
-            program (ProgramType):
+            program (Source):
                 input program
             additional_flags (tuple[str, ...]):
                 additional flags used for the compilation
@@ -1370,20 +1448,28 @@ def __compilation_setting_parser() -> argparse.ArgumentParser:
     parser.add_argument("-o")
     parser.add_argument("-c", action="store_true")
     parser.add_argument("-S", action="store_true")
+    parser.add_argument("-MT", type=str, action="append")
+    parser.add_argument("-MQ", type=str, action="append")
 
     return parser
 
 
 def parse_compilation_setting_from_string(
     s: str,
-) -> tuple[CompilationSetting, list[str], CompilationOutput]:
+) -> tuple[
+    CompilationSetting, list[SourceFile | ObjectCompilationOutput], CompilationOutput
+]:
     """Parse the compilation setting provided in `s`.
 
     Args:
         s (str): compilation command string to be parsed.
 
     Returns:
-        tuple[CompilationSetting, list[str], CompilationOutput]:
+        tuple[
+            CompilationSetting,
+            list[SourceProgram | ObjectCompilationOutput],
+            CompilationOutput
+        ]:
             - CompilationSetting
             - source files provided
             - specified compilation output file and kind
@@ -1394,14 +1480,27 @@ def parse_compilation_setting_from_string(
     )
     CPP_EXT = (".cc", ".cxx", ".cpp")
     C_EXT = (".c",)
+    OBJ_EXT = (".o",)
 
-    sources: list[str] = []
+    sources: list[SourceFile | ObjectCompilationOutput] = []
     flags: list[str] = []
     for arg in rest:
-        if arg.lower().endswith(CPP_EXT + C_EXT):
-            sources.append(arg)
+        if arg.lower().endswith(CPP_EXT):
+            sources.append(SourceFile(language=Language.CPP, filename=Path(arg)))
+        elif arg.lower().endswith(C_EXT):
+            sources.append(SourceFile(language=Language.C, filename=Path(arg)))
+        elif arg.lower().endswith(OBJ_EXT):
+            sources.append(ObjectCompilationOutput(filename=Path(arg)))
         else:
             flags.append(arg)
+
+    # append flags caputred by the parser
+    if parsed_args.MT:
+        for mt in parsed_args.MT:
+            flags.extend(["-MT", mt])
+    if parsed_args.MQ:
+        for mq in parsed_args.MQ:
+            flags.extend(["-MQ", mq])
 
     include_paths: tuple[str, ...] = tuple(parsed_args.I) if parsed_args.I else tuple()
     system_include_paths: tuple[str, ...] = (

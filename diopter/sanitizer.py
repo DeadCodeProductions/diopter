@@ -129,6 +129,7 @@ class Sanitizer:
         "excess elements in struct initializer",
         "comparison between pointer and integer",
         "return type of ‘main’ is not ‘int’",
+        "return type of 'main' is not 'int'",
         "past the end of the array",
         "no return statement in function returning non-void",
         "undefined behavior",
