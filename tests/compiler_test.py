@@ -8,7 +8,9 @@ from diopter.compiler import (
     CompilerProject,
     ExeCompilationOutput,
     Language,
+    LLVMIRCompilationOutput,
     ObjectCompilationOutput,
+    Opt,
     OptLevel,
     SourceProgram,
 )
@@ -260,3 +262,28 @@ def test_link() -> None:
     exe3 = strip_and_read_binary(Path(exe3_file.name))
     assert exe3 == exe_res1.output.read()
     assert exe3 == exe_res2.output.read()
+
+
+def get_opt() -> Opt:
+    for suffix in ["", "-13", "-14", "-15", "-16", "-17"]:
+        opt_path = Path(f"opt{suffix}")
+        if not which(opt_path):
+            continue
+        return Opt.from_path(opt_path)
+    assert False, "Could not find opt exe"
+
+
+def test_opt() -> None:
+    input_code = """
+    int foo(int a){
+        return a + 1;
+    }
+    """
+    program = SourceProgram(code=input_code, language=Language.C)
+    clang = CompilerExe.get_system_clang()
+    cs = CompilationSetting(compiler=clang, opt_level=OptLevel.O0)
+    res = cs.compile_program(program, LLVMIRCompilationOutput())
+    llvm_ir = res.output.read()
+    opt = get_opt()
+    opt_res = opt.run_on_input(res.output.filename, ("-S",))
+    assert llvm_ir.strip() != opt_res.stdout.strip()

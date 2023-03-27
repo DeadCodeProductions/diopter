@@ -1190,6 +1190,74 @@ class CompilationSetting:
         )
 
 
+def parse_opt_version(opt_exe: Path) -> Revision | None:
+    """Tries to parse the revision of the opt.
+
+    Args:
+        opt_exe (Path): a path to the opt executable
+
+    Returns:
+        (CompilerProject, Revision) | None :
+            compiler project (LLVM or GCC)  and the parsed version, None if
+            the parsing failed
+    """
+    info = run_cmd(f"{str(opt_exe)} --version".split())
+    for line in info.stdout.splitlines():
+        if "LLVM version" in line:
+            return line[len("LLVM version") :].strip()
+    return None
+
+
+@dataclass(frozen=True)
+class Opt:
+    """An LLVM opt wrapper
+
+    Attributes:
+        exe (Path): the path to the executable
+        revision (Revision): the revision/version
+    """
+
+    exe: Path
+    revision: Revision
+
+    @staticmethod
+    def get_system_opt() -> Opt:
+        """Returns:
+        Opt:
+            the system's opt
+        """
+        opt = which("opt")
+        assert opt, "opt is not in PATH"
+        opt_path = Path(opt)
+        project_revision = parse_opt_version(opt_path)
+        assert project_revision is not None
+        return Opt(opt_path, project_revision)
+
+    @staticmethod
+    def from_path(opt_path: Path) -> Opt:
+        project_revision = parse_opt_version(opt_path)
+        assert project_revision
+        return Opt(opt_path, project_revision)
+
+    def run_on_input(
+        self,
+        input_file: Path,
+        flags: Sequence[str],
+        timeout: int | None = None,
+    ) -> CommandOutput:
+        """Run opt on `input_file` and capture stdout and stderr"""
+
+        cmd = list(chain((str(self.exe), str(input_file)), flags))
+        try:
+            return run_cmd(
+                cmd,
+                timeout=timeout,
+                additional_env={"TMPDIR": str(tempfile.gettempdir())},
+            )
+        except subprocess.CalledProcessError as e:
+            raise CompileError.from_called_process_exception(" ".join(cmd), e)
+
+
 def find_standard_include_paths(
     clang: CompilerExe, cpp: bool = False
 ) -> tuple[str, ...]:
