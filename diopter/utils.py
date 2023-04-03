@@ -46,6 +46,8 @@ def run_cmd_async(
     cmd: Union[str, list[str]],
     working_dir: Path | None = None,
     additional_env: dict[str, str] = {},
+    stdout: IO[str] | int | None = subprocess.PIPE,
+    stderr: IO[str] | int | None = subprocess.PIPE,
     **kwargs: Any,
 ) -> subprocess.Popen[Any]:
     if working_dir is None:
@@ -55,12 +57,13 @@ def run_cmd_async(
 
     if isinstance(cmd, list):
         cmd = " ".join(cmd)
+
     return subprocess.Popen(
         shlex.split(cmd.replace('"', '\\"')),
         cwd=str(working_dir),
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=stdout,
+        stderr=stderr,
         **kwargs,
     )
 
