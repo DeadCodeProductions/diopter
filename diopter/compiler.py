@@ -809,6 +809,12 @@ class AsyncCompilationResult(Generic[CompilationOutputType]):
                 the compilation output
         """
         outs, errs = self.proc.communicate(timeout=timeout)
+
+        if outs is None:
+            outs = ""
+        if errs is None:
+            errs = ""
+
         assert isinstance(outs, str)
         assert isinstance(errs, str)
 
@@ -986,6 +992,8 @@ class CompilationSetting:
         program: Source,
         output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
+        stdout: IO[str] | int | None = subprocess.PIPE,
+        stderr: IO[str] | int | None = subprocess.PIPE,
     ) -> AsyncCompilationResult[CompilationOutputType]:
         """Compile a program with this setting asynchronously.
 
@@ -1015,6 +1023,8 @@ class CompilationSetting:
                 cmd,
                 additional_env={"TMPDIR": tempfile.gettempdir()},
                 text=True,
+                stdout=stdout,
+                stderr=stderr,
             ),
             code_file,
             output,
@@ -1156,6 +1166,8 @@ class CompilationSetting:
         objects: Sequence[ObjectCompilationOutput],
         output: ExeCompilationOutput,
         additional_flags: tuple[str, ...] = tuple(),
+        stdout: IO[str] | int | None = subprocess.PIPE,
+        stderr: IO[str] | int | None = subprocess.PIPE,
     ) -> AsyncCompilationResult[ExeCompilationOutput]:
         """Linking the input `objects` to the `output` asynchronously.
 
@@ -1184,6 +1196,8 @@ class CompilationSetting:
                 cmd,
                 additional_env={"TMPDIR": str(tempfile.gettempdir())},
                 text=True,
+                stdout=stdout,
+                stderr=stderr,
             ),
             None,
             output,
