@@ -42,6 +42,31 @@ def run_cmd(
     )
 
 
+def run_cmd_to_logfile(
+    cmd: Union[str, list[str]],
+    log_file: TextIO | None = None,
+    working_dir: Path | None = None,
+    additional_env: dict[str, str] = {},
+) -> None:
+    if working_dir is None:
+        working_dir = Path(os.getcwd())
+    env = os.environ.copy()
+    env.update(additional_env)
+
+    if isinstance(cmd, list):
+        cmd = " ".join(cmd)
+
+    subprocess.run(
+        shlex.split(cmd.replace('"', '\\"')),
+        cwd=working_dir,
+        check=True,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        env=env,
+        capture_output=False,
+    )
+
+
 def run_cmd_async(
     cmd: Union[str, list[str]],
     working_dir: Path | None = None,
@@ -65,31 +90,6 @@ def run_cmd_async(
         stdout=stdout,
         stderr=stderr,
         **kwargs,
-    )
-
-
-def run_cmd_to_logfile(
-    cmd: Union[str, list[str]],
-    log_file: TextIO | None = None,
-    working_dir: Path | None = None,
-    additional_env: dict[str, str] = {},
-) -> None:
-    if working_dir is None:
-        working_dir = Path(os.getcwd())
-    env = os.environ.copy()
-    env.update(additional_env)
-
-    if isinstance(cmd, list):
-        cmd = " ".join(cmd)
-
-    subprocess.run(
-        shlex.split(cmd),
-        cwd=working_dir,
-        check=True,
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
-        env=env,
-        capture_output=False,
     )
 
 
