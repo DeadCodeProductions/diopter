@@ -381,7 +381,9 @@ class Sanitizer:
         """
 
         if self.checked_warnings and not (
-            check_warnings_result := self.check_for_compiler_warnings(program)
+            check_warnings_result := self.check_for_compiler_warnings(
+                program, debug=debug
+            )
         ):
             return check_warnings_result
 
@@ -393,7 +395,7 @@ class Sanitizer:
             return sanitizer_result
 
         if self.ccomp and not (
-            ccomp_result := self.check_for_ccomp_errors(program, debug)
+            ccomp_result := self.check_for_ccomp_errors(program, debug=debug)
         ):
             assert ccomp_result is not None
             return ccomp_result
