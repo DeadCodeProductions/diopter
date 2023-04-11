@@ -1,7 +1,9 @@
 import subprocess
 from abc import ABC, abstractmethod
 from concurrent.futures import Executor, Future, wait
+from pathlib import Path
 from random import randint
+from shutil import which
 from typing import Iterator
 
 from diopter.compiler import Language, SourceProgram
@@ -75,6 +77,21 @@ class Generator(ABC):
             wait(futures)
 
 
+def find_csmith_include_path() -> str:
+    """Find csmith include path.
+
+    Returns:
+        str: csmith include path
+    """
+    if Path("/usr/include/csmith-2.3.0").exists():
+        return "/usr/include/csmith-2.3.0"
+
+    if Path("/usr/include/csmith").exists():
+        return "/usr/include/csmith"
+
+    raise RuntimeError("Could not find csmith include path")
+
+
 class CSmithGenerator(Generator):
     default_options_pool = [
         "arrays",
@@ -139,10 +156,13 @@ class CSmithGenerator(Generator):
         self.options = (
             options_pool if options_pool else CSmithGenerator.default_options_pool
         )
-        # XXX: don't hardcode the path here
-        self.include_path = (
-            include_path if include_path else "/usr/include/csmith-2.3.0"
-        )
+        self.include_path = include_path if include_path else find_csmith_include_path()
+
+        if not Path(self.include_path).exists():
+            raise ValueError(f"Invalid csmith include path: {self.include_path}")
+
+        if not which(self.csmith):
+            raise ValueError(f"Invalid csmith executable: {self.csmith}")
 
     def generate_program_impl(self) -> SourceProgram:
         """Generate random code with csmith.
