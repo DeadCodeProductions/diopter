@@ -1058,7 +1058,7 @@ class CompilationSetting:
         result = self.compile_program(
             program,
             ASMCompilationOutput(None),
-            ("-P", "-E") + additional_flags,
+            ("-P", "-E", "-D_FORTIFY_SOURCE=0") + additional_flags,
             timeout=timeout,
         )
         preprocessed_source = result.output.read()
