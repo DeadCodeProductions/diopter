@@ -40,7 +40,7 @@ jobs:
           python-version: '3.10'
       - run: |
           sudo apt update -y
-          sudo apt install creduce -y
+          sudo apt install creduce csmith libcsmith-dev -y
           python -m pip install . pytest
       - name: Run tests
         run: python -m pytest tests
