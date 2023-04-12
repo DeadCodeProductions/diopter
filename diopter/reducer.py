@@ -34,7 +34,7 @@ from shutil import which
 from sys import stderr
 from typing import TextIO
 
-from diopter.compiler import SourceProgram
+from diopter.compiler import ProgramType, SourceProgram
 from diopter.utils import TempDirEnv, run_cmd_to_logfile
 
 
@@ -169,12 +169,12 @@ class Reducer:
 
     def reduce(
         self,
-        program: SourceProgram,
+        program: ProgramType,
         interestingness_test: ReductionCallback,
         jobs: int | None = None,
         log_file: TextIO | None = None,
         debug: bool = False,
-    ) -> SourceProgram | None:
+    ) -> ProgramType | None:
         """
         Reduce `program` according to the `interestingness_test`
 
