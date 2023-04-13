@@ -992,6 +992,7 @@ class CompilationSetting:
         program: Source,
         output: CompilationOutputType,
         additional_flags: tuple[str, ...] = tuple(),
+        timeout: int | None = None,
         stdout: IO[str] | int | None = subprocess.PIPE,
         stderr: IO[str] | int | None = subprocess.PIPE,
     ) -> AsyncCompilationResult[CompilationOutputType]:
@@ -1008,6 +1009,12 @@ class CompilationSetting:
                 the desired output, e.g., executable or object file
             additional_flags (tuple[str, ...]):
                 additional flags used for the compilation
+            timeout (int):
+                timeout in seconds for the compilation command
+            stdout (IO[str] | int | None):
+                where to write the stdout of the compiler
+            stderr (IO[str] | int | None):
+                where to write the stderr of the compiler
 
         Returns:
             AsyncCompilationResult[CompilationOutputType]:
@@ -1023,6 +1030,7 @@ class CompilationSetting:
                 cmd,
                 additional_env={"TMPDIR": tempfile.gettempdir()},
                 text=True,
+                timeout=timeout,
                 stdout=stdout,
                 stderr=stderr,
             ),
@@ -1166,6 +1174,7 @@ class CompilationSetting:
         objects: Sequence[ObjectCompilationOutput],
         output: ExeCompilationOutput,
         additional_flags: tuple[str, ...] = tuple(),
+        timeout: int | None = None,
         stdout: IO[str] | int | None = subprocess.PIPE,
         stderr: IO[str] | int | None = subprocess.PIPE,
     ) -> AsyncCompilationResult[ExeCompilationOutput]:
@@ -1178,8 +1187,12 @@ class CompilationSetting:
                 the output executable
             additional_flags (tuple[str, ...]):
                 additional flags used for the compilation
-            timeout (int | None):
+            timeout (int):
                 timeout in seconds for the compilation command
+            stdout (IO[str] | int | None):
+                where to write the stdout of the compiler
+            stderr (IO[str] | int | None):
+                where to write the stderr of the compiler
 
         Returns:
             AsyncCompilationResult[ExeCompilationOutputType]:
@@ -1196,6 +1209,7 @@ class CompilationSetting:
                 cmd,
                 additional_env={"TMPDIR": str(tempfile.gettempdir())},
                 text=True,
+                timeout=timeout,
                 stdout=stdout,
                 stderr=stderr,
             ),
