@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import subprocess
 from abc import ABC, abstractmethod
-from concurrent.futures import Executor, Future, wait
+from concurrent.futures import Executor
+from itertools import repeat
 from pathlib import Path
 from random import randint
 from shutil import which
@@ -8,6 +11,10 @@ from typing import Iterator
 
 from diopter.compiler import Language, SourceProgram
 from diopter.sanitizer import Sanitizer
+
+
+def dummy_func(generator: Generator) -> SourceProgram:
+    return generator.generate_program()
 
 
 class Generator(ABC):
@@ -41,8 +48,8 @@ class Generator(ABC):
                 return program
 
     def generate_programs_parallel(
-        self, n: int, executor: Executor, max_parallel_jobs: int = 1024
-    ) -> Iterator[Future[SourceProgram]]:
+        self, n: int, executor: Executor, chunksize: int = 10
+    ) -> Iterator[SourceProgram]:
         """
         Generate programs in parallel. Yield futures wrapping the generation
         jobs.
@@ -57,24 +64,10 @@ class Generator(ABC):
                 how many cases to generate
             executor (Executor):
                 executor used for running the code generation jobs
-            max_parallel_jobs (int):
-                Maximum number of jobs to be submitted concurrently. This
-                is a workaround for deadlocking issues with ProcessPoolExecutor.
-                If n > max_parallel_jobs then jobs will be submitted in chunks
-                of max_parallel_jobs.
         Returns:
-            Iterator[Future[SourceProgram]]: the generated program futures
+            Iterator[SourceProgram]: the generated programs
         """
-        remaining = n
-        while True:
-            futures = []
-            for _ in range(min(max_parallel_jobs, remaining)):
-                futures.append(executor.submit(self.generate_program))
-                yield futures[-1]
-            remaining -= len(futures)
-            if not remaining:
-                return
-            wait(futures)
+        return executor.map(dummy_func, repeat(self, n), chunksize=chunksize)
 
 
 def find_csmith_include_path() -> str:
