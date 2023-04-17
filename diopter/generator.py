@@ -125,6 +125,7 @@ class CSmithGenerator(Generator):
         options_pool: list[str] | None = None,
         minimum_length: int = 10000,
         maximum_length: int = 50000,
+        amount_statements: int | tuple[int, int] | None = None,
     ):
         """
         Args:
@@ -133,7 +134,8 @@ class CSmithGenerator(Generator):
             csmith (str | None):
                 Path to csmith executable, if empty "csmith" will be used
             include_path (str | None):
-                csmith include path, if empty "/usr/include/csmith-2.3.0" will be used
+                csmith include path, if empty "/usr/include/csmith-2.3.0" or
+                "/usr/include/csmith" will be used, depending on which one exists
             options_pool (list[str] | None):
                 csmith options that will be randomly selected,
                 if empty default_options_pool will be used
@@ -141,10 +143,19 @@ class CSmithGenerator(Generator):
                 The minimum length of a generated test case in characters.
             maximum_length (int):
                 The maximum length of a generated test case in characters.
+            amount_statements (int | tuple[int, int] | None):
+                Uses the `--stop-by-stmt` option of csmith to generate a program with
+                approximately the given amount of statements. If None, the constraints
+                from `minimum_length` and `maximum_length` are used.
+                If `amount_statements` is set, `minimum_length` and `maximum_length` are
+                ignored.
+                If `amount_statements` is a tuple (a,b), a random amount of statements
+                is chosen in the interval [a,b].
         """
         super().__init__(sanitizer)
         self.minimum_length = minimum_length
         self.maximum_length = maximum_length
+        self.amount_statements = amount_statements
         self.csmith = csmith if csmith else "csmith"
         self.options = (
             options_pool if options_pool else CSmithGenerator.default_options_pool
@@ -165,6 +176,13 @@ class CSmithGenerator(Generator):
         """
 
         cmd = [self.csmith] + CSmithGenerator.fixed_options
+        if self.amount_statements:
+            if isinstance(self.amount_statements, tuple):
+                amount = randint(*self.amount_statements)
+            else:
+                amount = self.amount_statements
+            cmd.append(f"--stop-by-stmt {amount}")
+
         for option in self.options:
             if randint(0, 1):
                 cmd.append(f"--{option}")
@@ -182,7 +200,7 @@ class CSmithGenerator(Generator):
         )
 
     def filter_program(self, program: SourceProgram) -> bool:
-        if (
+        if not self.amount_statements and (
             len(program.code) < self.minimum_length
             or len(program.code) > self.maximum_length
         ):
