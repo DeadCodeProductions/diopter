@@ -306,6 +306,7 @@ class Sanitizer:
                         "-Wpedantic",
                         "-Wno-builtin-declaration-mismatch",
                         "-fsanitize=undefined,address",
+                        "-fno-sanitize-recover=all",
                     ),
                     timeout=self.compilation_timeout,
                 )
