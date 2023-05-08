@@ -1,6 +1,8 @@
 from pathlib import Path
 from shutil import which
 
+import pytest
+
 from diopter.compiler import (
     CompilerExe,
     CompilerProject,
@@ -53,13 +55,19 @@ def test_check_for_compiler_warnings() -> None:
     assert san.check_for_compiler_warnings(p2).check_warnings_failed
 
 
-def test_sanitizer() -> None:
+@pytest.mark.parametrize(
+    "code",
+    [
+        "int main(){ int a[1] = {0}; return a[1];}",
+        "int printf(const char *, ...); int main()"
+        '{int a = 2147483647;printf("a+1: %d", a+1);}',
+    ],
+)
+def test_sanitizer(code: str) -> None:
     clang = find_clang()
     assert clang, "Could not find a clang executable"
     san = Sanitizer(clang=clang)
-    p = SourceProgram(
-        code="int main(){ int a[1] = {0}; return a[1];}", language=Language.C
-    )
+    p = SourceProgram(code=code, language=Language.C)
     assert san.check_for_ub_and_address_sanitizer_errors(
         p, debug=True
     ).ub_address_sanitizer_failed
