@@ -245,10 +245,17 @@ class Sanitizer:
                 if debug or self.debug:
                     print(e)
                 return SanitizationResult(check_warnings_failed=True)
+            warnings: set[str] = set()
             for line in result.stdout_stderr_output.splitlines():
                 for checked_warning in self.checked_warnings:
                     if checked_warning in line:
-                        return SanitizationResult(check_warnings_failed=True)
+                        if debug or self.debug:
+                            warnings.add(checked_warning)
+                        else:
+                            return SanitizationResult(check_warnings_failed=True)
+            if (debug or self.debug) and warnings:
+                print("Warnings found:", "|".join(warnings))
+                return SanitizationResult(check_warnings_failed=True)
             return SanitizationResult()
 
         with TempDirEnv():
