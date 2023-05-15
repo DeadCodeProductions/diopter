@@ -117,6 +117,7 @@ class TempDirEnv:
     ) -> None:
         if self.chdir:
             os.chdir(self.old_dir)
+        self.td.cleanup()
         tempfile.tempdir = None
 
 
