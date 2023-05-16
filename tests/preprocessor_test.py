@@ -15,7 +15,7 @@ def test_preprocessor_make_compiler_agnostic() -> None:
     gcc = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     clang = CompilerExe(CompilerProject.GCC, Path("clang"), "")
 
-    san = Sanitizer()
+    san = Sanitizer(debug=True)
     gen = CSmithGenerator(san)
     program = gen.generate_program()
 
@@ -43,7 +43,7 @@ def test_preprocessor_make_compiler_agnostic() -> None:
             clangOt.compile_program(
                 pp_with_gcc, ObjectCompilationOutput(Path("/dev/null"))
             )
-            san.sanitize(pp_with_gcc, debug=True)
+            san.sanitize(pp_with_gcc)
 
             pp_with_clang = clangOp.preprocess_program(
                 program, make_compiler_agnostic=True
@@ -54,4 +54,4 @@ def test_preprocessor_make_compiler_agnostic() -> None:
             clangOt.compile_program(
                 pp_with_clang, ObjectCompilationOutput(Path("/dev/null"))
             )
-            san.sanitize(pp_with_clang, debug=True)
+            san.sanitize(pp_with_clang)

@@ -66,11 +66,9 @@ def test_check_for_compiler_warnings() -> None:
 def test_sanitizer(code: str) -> None:
     clang = find_clang()
     assert clang, "Could not find a clang executable"
-    san = Sanitizer(clang=clang)
+    san = Sanitizer(clang=clang, debug=True)
     p = SourceProgram(code=code, language=Language.C)
-    assert san.check_for_ub_and_address_sanitizer_errors(
-        p, debug=True
-    ).ub_address_sanitizer_failed
+    assert san.check_for_ub_and_address_sanitizer_errors(p).ub_address_sanitizer_failed
 
 
 if __name__ == "__main__":
