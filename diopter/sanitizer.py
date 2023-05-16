@@ -310,6 +310,8 @@ class Sanitizer:
                     timeout=self.compilation_timeout,
                 )
             except subprocess.TimeoutExpired:
+                if self.debug:
+                    print("Compilation timed out")
                 return SanitizationResult(timeout=True)
             except CompileError as e:
                 if self.debug:
@@ -320,12 +322,16 @@ class Sanitizer:
             try:
                 run_cmd(str(result.output.filename), timeout=self.execution_timeout)
             except subprocess.TimeoutExpired:
+                if self.debug:
+                    print("Compilation timed out")
                 return SanitizationResult(timeout=True)
             except subprocess.CalledProcessError as e:
                 if self.debug:
                     print(e.stdout)
                     print(e.stderr)
                 return SanitizationResult(ub_address_sanitizer_failed=True)
+            if self.debug:
+                print("Sanitizer checks passed")
             return SanitizationResult()
 
     def check_for_ccomp_errors(
@@ -346,12 +352,18 @@ class Sanitizer:
                 failed sanitization or not.
         """
         if not self.ccomp:
+            if self.debug:
+                print("CComp not available, skipping")
             return None
         with TempDirEnv():
             try:
                 if not self.ccomp.check_program(program, timeout=self.ccomp_timeout):
+                    if self.debug:
+                        print("CComp failed")
                     return SanitizationResult(ccomp_failed=True)
             except subprocess.TimeoutExpired:
+                if self.debug:
+                    print("CComp timed out")
                 return SanitizationResult(timeout=True)
 
             return SanitizationResult()
