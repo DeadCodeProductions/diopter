@@ -3,7 +3,8 @@ import math
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from ccbuilder import Commit, CompilerProject, Repo, Revision, find_cached_revisions
+from diopter.repository import Commit, Repo, Revision
+from diopter.utils import CompilerProject, find_cached_revisions
 
 
 class BisectionException(Exception):
