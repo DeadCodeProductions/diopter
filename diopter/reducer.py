@@ -175,6 +175,7 @@ class Reducer:
         log_file: TextIO | None = None,
         debug: bool = False,
         timeout: int | None = None,
+        additional_args: list[str] = [],
     ) -> ProgramType | None:
         """
         Reduce `program` according to the `interestingness_test`
@@ -192,6 +193,8 @@ class Reducer:
                 Whether to pass the debug flag to creduce
             timeout (int | None):
                 Timeout for each creduce job, if empty creduce's default is used
+            additional_args (list[str]):
+                Additional arguments to pass to creduce
 
         Returns:
             (SourceProgram |None):
@@ -231,6 +234,8 @@ class Reducer:
 
             if timeout is not None:
                 creduce_cmd.append(f"--timeout {timeout}")
+
+            creduce_cmd.extend(additional_args)
 
             try:
                 run_cmd_to_logfile(
