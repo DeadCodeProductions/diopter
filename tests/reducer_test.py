@@ -13,7 +13,7 @@ def test_simple() -> None:
     )
     reducer = Reducer()
 
-    output = reducer.reduce(reducer_input, SimpleCallback(), debug=True)
+    output = reducer.reduce(reducer_input, SimpleCallback(), debug=True, timeout=2)
     assert output
     assert output.code.strip() == "a", f"output={output}"
 
