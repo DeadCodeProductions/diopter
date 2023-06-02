@@ -24,17 +24,12 @@ def test_preprocessor_make_compiler_agnostic() -> None:
     for optlevel_preprocess in optlevels:
         for optlevel_test in optlevels:
             gccOp = CompilationSetting(
-                compiler=gcc, opt_level=optlevel_preprocess, flags=("-march=native",)
+                compiler=gcc,
+                opt_level=optlevel_preprocess,
             )
-            clangOp = CompilationSetting(
-                compiler=clang, opt_level=optlevel_preprocess, flags=("-march=native",)
-            )
-            gccOt = CompilationSetting(
-                compiler=gcc, opt_level=optlevel_test, flags=("-march=native",)
-            )
-            clangOt = CompilationSetting(
-                compiler=clang, opt_level=optlevel_test, flags=("-march=native",)
-            )
+            clangOp = CompilationSetting(compiler=clang, opt_level=optlevel_preprocess)
+            gccOt = CompilationSetting(compiler=gcc, opt_level=optlevel_test)
+            clangOt = CompilationSetting(compiler=clang, opt_level=optlevel_test)
 
             pp_with_gcc = gccOp.preprocess_program(program, make_compiler_agnostic=True)
             gccOt.compile_program(
