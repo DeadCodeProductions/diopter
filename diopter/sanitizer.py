@@ -23,6 +23,7 @@ from diopter.compiler import (
     CompileError,
     CompilerExe,
     ExeCompilationOutput,
+    Language,
     ObjectCompilationOutput,
     OptLevel,
     SourceProgram,
@@ -59,6 +60,18 @@ class SanitizationResult:
         return not self.__eq__(other)
 
 
+def supports_gnu2x(compiler: CompilerExe) -> bool:
+    try:
+        CompilationSetting(compiler=compiler, opt_level=OptLevel.O0).compile_program(
+            SourceProgram(language=Language.C, code=""),
+            ObjectCompilationOutput(Path("/dev/null")),
+            additional_flags=("--std=gnu2x",),
+        )
+        return True
+    except CompileError:
+        return False
+
+
 class Sanitizer:
     """A wrapper of various sanitization methods.
 
@@ -83,6 +96,8 @@ class Sanitizer:
             optimization level used when checking for warnings
         sanitizer_opt_level (OptLevel):
             optimization level used when running sanitizers
+        use_gnu2x (bool):
+            if True then gnu2x will be used when checking for compiler warnings
         compilation_timeout (int):
             seconds to wait before aborting when compiling the program
         execution_timeout (int):
@@ -143,8 +158,9 @@ class Sanitizer:
         clang: CompilerExe | None = None,
         ccomp: CComp | None = None,
         check_warnings_opt_level: OptLevel = OptLevel.O3,
-        sanitizer_opt_level: OptLevel = OptLevel.O0,
+        sanitizer_opt_level: OptLevel = OptLevel.O1,
         checked_warnings: tuple[str, ...] | None = None,
+        use_gnu2x_if_available: bool = True,
         compilation_timeout: int = 8,
         execution_timeout: int = 4,
         ccomp_timeout: int = 16,
@@ -177,6 +193,9 @@ class Sanitizer:
             checked_warnings (tuple[str,...] | None):
                 if not None implies check_warnings = True and will
                 be used instead of Sanitizer.default_warnings
+            use_gnu2x_if_available (bool):
+                if True then gnu2x will be used if available
+                when checking for compiler warnings
             compilation_timeout (int):
                 after how many seconds to abort a compilation and fail
             execution_timeout (int):
@@ -203,6 +222,11 @@ class Sanitizer:
         self.execution_timeout = execution_timeout
         self.ccomp_timeout = ccomp_timeout
         self.debug = debug
+        self.use_gnu2x = (
+            use_gnu2x_if_available
+            and supports_gnu2x(self.clang)
+            and supports_gnu2x(self.gcc)
+        )
 
     def check_for_compiler_warnings(self, program: SourceProgram) -> SanitizationResult:
         """Checks the program for compiler warnings.
@@ -230,6 +254,11 @@ class Sanitizer:
                         "-Wextra",
                         "-Wpedantic",
                         "-Wno-builtin-declaration-mismatch",
+                    )
+                    + (
+                        ("--std=gnu2x",)
+                        if self.use_gnu2x and program.language == Language.C
+                        else ()
                     ),
                     timeout=self.compilation_timeout,
                 )
