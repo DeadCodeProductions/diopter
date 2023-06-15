@@ -122,10 +122,11 @@ class BisectionCallback(ABC):
 
 def bisect(
     repo: Repo,
-    good: Revision | Commit,
-    bad: Revision | Commit,
     callback: BisectionCallback,
     no_checkout: bool = True,
+    *,
+    good: Revision | Commit,
+    bad: Revision | Commit,
 ) -> Commit | None:
     # TODO: add support for specifying which paths in the repo to look at
     with TemporaryDirectory() as tempdir:

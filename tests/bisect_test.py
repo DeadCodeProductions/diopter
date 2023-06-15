@@ -30,6 +30,12 @@ def test_bisection() -> None:
         bad = commits[-1]
         good = commits[0]
         callback = TestBisectionCallback()
-        result = bisect(repo, good, bad, callback, no_checkout=False)
+        result = bisect(
+            repo,
+            good=good,
+            bad=bad,
+            callback=callback,
+            no_checkout=False,
+        )
         assert result is not None
         assert result == commits[2]
