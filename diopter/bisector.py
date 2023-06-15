@@ -149,14 +149,14 @@ def bisect(
                 print(f"Bisection commit shifted: {commit} -> {test_result.commit}")
             try:
                 if test_result.is_good is None:
-                    print(f"Skipping {commit}")
+                    print(f"Skipping {test_result.commit}")
                     bisect_skip(worktree_dir, test_result.commit)
                     continue
                 if test_result.is_good:
-                    print(f"Good {commit}")
+                    print(f"Good {test_result.commit}")
                     bisect_good(worktree_dir, test_result.commit)
                 else:
-                    print(f"Bad {commit}")
+                    print(f"Bad {test_result.commit}")
                     bisect_bad(worktree_dir, test_result.commit)
 
             except CalledProcessError as e:
