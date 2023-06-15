@@ -12,7 +12,7 @@ class TestBisectionCallback(BisectionCallback):
         if len(filenames) == 4:
             # Trigger a bisect skip
             return None
-        return len(filenames) <= 2
+        return len(filenames) > 2
 
 
 def test_bisection() -> None:
