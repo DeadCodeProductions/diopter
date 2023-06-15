@@ -116,8 +116,10 @@ class BisectionCallback(ABC):
     ) -> BisectTestResult:
         """Checks if the commit is good or bad or broken."""
         commit = self.shift_tested_commit(commit, good_commit, bad_commit)
-        is_good = self.check_impl(commit, repo_dir)
-        return BisectTestResult(commit, is_good)
+        result = self.check_impl(commit, repo_dir)
+        if result is None:
+            return BisectTestResult(commit, None)
+        return BisectTestResult(commit, result is False)
 
 
 def bisect(
@@ -146,7 +148,7 @@ def bisect(
             if test_result.commit != commit:
                 print(f"Bisection commit shifted: {commit} -> {test_result.commit}")
             try:
-                if test_result is None:
+                if test_result.is_good is None:
                     print(f"Skipping {commit}")
                     bisect_skip(worktree_dir, test_result.commit)
                     continue
