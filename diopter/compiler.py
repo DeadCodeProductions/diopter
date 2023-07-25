@@ -1531,7 +1531,11 @@ class CComp:
         return CComp(exe=Path(ccomp).resolve(strict=True))
 
     def check_program(
-        self, program: SourceProgram, timeout: int | None = None, debug: bool = False
+        self,
+        program: SourceProgram,
+        timeout: int | None = None,
+        debug: bool = False,
+        additional_flags: tuple[str, ...] = tuple(),
     ) -> bool:
         """Checks the input program for errors using ccomp's interpreter mode.
 
@@ -1539,6 +1543,7 @@ class CComp:
            program (SourceProgram): the input program
            timeout (int | None): timeout in seconds for the checking
            debug (bool): if true ccomp's output will be printed on failure
+           additional_flags (tuple[str, ...]): additional flags used for CompCert
 
         Returns:
             bool:
@@ -1562,6 +1567,7 @@ class CComp:
                 for ipath in chain(program.include_paths, program.system_include_paths)
             ]
             + [f"-D{macro}" for macro in program.defined_macros]
+            + list(additional_flags)
         )
         try:
             run_cmd(
