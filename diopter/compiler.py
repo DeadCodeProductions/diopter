@@ -55,7 +55,7 @@ import re
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from enum import Enum
 from itertools import chain
 from pathlib import Path
@@ -390,6 +390,39 @@ class CompilerExe:
         assert project_revision
         return CompilerExe(project_revision[0], cc, project_revision[1])
 
+    def to_json_dict(self) -> dict[str, Any]:
+        """Convert this CompilerExe to a jsonable dictionary.
+
+        The dictionary can be converted back to a CompilerExe with `from_json_dict`.
+
+        Returns:
+            dict[str, Any]:
+                the jsonable dictionary
+        """
+        j = {
+            "project": str(self.project.name),
+            "exe": str(self.exe),
+            "revision": self.revision,
+        }
+        assert set(j.keys()) == set(field.name for field in fields(self))
+        return j
+
+    @staticmethod
+    def from_json_dict(j: dict[str, Any]) -> CompilerExe:
+        """Convert a jsonable dictionary to a CompilerExe.
+
+        The dictionary must have been created with `to_json_dict`.
+
+        Returns:
+            CompilerExe:
+                the parsed CompilerExe
+        """
+        return CompilerExe(
+            project=CompilerProject[j["project"]],
+            exe=Path(j["exe"]),
+            revision=j["revision"],
+        )
+
 
 class OptLevel(Enum):
     """Optimization Levels supported by gcc and clang"""
@@ -529,7 +562,7 @@ class CompilationOutput(ABC):
         if not isinstance(other, CompilationOutput):
             raise NotImplementedError
         return (
-            type(self) == type(other)
+            type(self) is type(other)
             and self.filename == other.filename
             and self.temporary_file == other.temporary_file
         )
@@ -1201,6 +1234,47 @@ class CompilationSetting:
             ),
             None,
             output,
+        )
+
+    def to_json_dict(self) -> dict[str, Any]:
+        """Returns a json serializable dictionary representation of this setting.
+
+        The serialized dictionary can be deserialized with `from_json_dict`.
+
+        Returns:
+            dict[str, Any]:
+                The json serializable dictionary representation of this setting.
+        """
+        j = {
+            "compiler": self.compiler.to_json_dict(),
+            "opt_level": self.opt_level.name,
+            "include_paths": self.include_paths,
+            "system_include_paths": self.system_include_paths,
+            "macro_definitions": self.macro_definitions,
+            "flags": self.flags,
+        }
+        assert set(j.keys()) == set(
+            field.name for field in fields(self)
+        ), f"{set(j.keys())} vs {set(field.name for field in fields(self))}"
+        return j
+
+    @staticmethod
+    def from_json_dict(j: dict[str, Any]) -> CompilationSetting:
+        """Reconstructs the setting from json serializable dictionary representation.
+
+        `j` should be the output of `to_json_dict`.
+
+        Returns:
+            CompilationSetting:
+                The reconstructed setting.
+        """
+        return CompilationSetting(
+            compiler=CompilerExe.from_json_dict(j["compiler"]),
+            opt_level=OptLevel[j["opt_level"]],
+            include_paths=tuple(j["include_paths"]),
+            system_include_paths=tuple(j["system_include_paths"]),
+            macro_definitions=tuple(j["macro_definitions"]),
+            flags=tuple(j["flags"]),
         )
 
 
