@@ -37,6 +37,7 @@ class SanitizationResult:
 
     check_warnings_failed: bool = False
     ub_address_sanitizer_failed: bool = False
+    memory_sanitizer_failed: bool = False
     ccomp_failed: bool = False
     timeout: bool = False
 
@@ -45,6 +46,7 @@ class SanitizationResult:
         return not (
             self.check_warnings_failed
             or self.ub_address_sanitizer_failed
+            or self.memory_sanitizer_failed
             or self.ccomp_failed
             or self.timeout
         )
@@ -79,6 +81,7 @@ class Sanitizer:
     to rule of obvious ways a program can be broken:
     - compiler warnings
     - address and undefined behavior sanitizers
+    - memory sanitizer
     - CompCert
 
     Attributes:
@@ -92,6 +95,8 @@ class Sanitizer:
             the warnings whose presence to check
         use_ub_address_sanitizer (bool):
             whether Sanitizer.sanitize should use clang's ub and address sanitizers
+        use_memory_sanitizer (bool):
+            whether Sanitizer.sanitize should use clang's memory sanitizer
         check_warnings_opt_level (OptLevel):
             optimization level used when checking for warnings
         sanitizer_opt_level (OptLevel):
@@ -153,6 +158,7 @@ class Sanitizer:
         *,
         check_warnings: bool = True,
         use_ub_address_sanitizer: bool = True,
+        use_memory_sanitizer: bool = False,
         use_ccomp_if_available: bool = True,
         gcc: CompilerExe | None = None,
         clang: CompilerExe | None = None,
@@ -173,6 +179,8 @@ class Sanitizer:
                 filter out cases with Sanitizer.default_warnings
             use_ub_address_sanitizer (bool):
                 whether to use clang's undefined behavior and address sanitizers
+            use_memory_sanitizer (bool):
+                whether to use clang's memory sanitizer
             use_ccomp_if_available (bool | None):
                 if ccomp should be used, if ccomp is not None this argument is ignored
             gcc (CompilerExe | None):
@@ -216,6 +224,7 @@ class Sanitizer:
         elif check_warnings:
             self.checked_warnings = Sanitizer.default_warnings
         self.use_ub_address_sanitizer = use_ub_address_sanitizer
+        self.use_memory_sanitizer = use_memory_sanitizer
         self.check_warnings_opt_level = check_warnings_opt_level
         self.sanitizer_opt_level = sanitizer_opt_level
         self.compilation_timeout = compilation_timeout
@@ -363,6 +372,67 @@ class Sanitizer:
                 print("Sanitizer checks passed")
             return SanitizationResult()
 
+    def check_for_memory_sanitizer_errors(
+        self, program: SourceProgram
+    ) -> SanitizationResult:
+        """Checks the program for memory sanitizer errors.
+
+        Compiles program with self.clang and -fsanitize=memory, then
+        it runs the checked program and reports whether it failed (or timed out).
+
+        Args:
+            program (SourceProgram):
+                The program to check.
+        Returns:
+            SanitizationResult:
+                whether the program failed sanitization or not.
+        """
+
+        with TempDirEnv():
+            # Compile program with -fsanitize=...
+            try:
+                result = CompilationSetting(
+                    compiler=self.clang,
+                    opt_level=self.sanitizer_opt_level,
+                ).compile_program(
+                    program,
+                    ExeCompilationOutput(None),
+                    (
+                        "-Wall",
+                        "-Wextra",
+                        "-Wpedantic",
+                        "-Wno-builtin-declaration-mismatch",
+                        "-fsanitize=memory",
+                        "-fno-sanitize-recover=all",
+                        "-O0",
+                    ),
+                    timeout=self.compilation_timeout,
+                )
+            except subprocess.TimeoutExpired:
+                if self.debug:
+                    print("Compilation timed out")
+                return SanitizationResult(timeout=True)
+            except CompileError as e:
+                if self.debug:
+                    print(e)
+                return SanitizationResult(memory_sanitizer_failed=True)
+
+            # Run the instrumented binary
+            try:
+                run_cmd(str(result.output.filename), timeout=self.execution_timeout)
+            except subprocess.TimeoutExpired:
+                if self.debug:
+                    print("Compilation timed out")
+                return SanitizationResult(timeout=True)
+            except subprocess.CalledProcessError as e:
+                if self.debug:
+                    print(e.stdout)
+                    print(e.stderr)
+                return SanitizationResult(memory_sanitizer_failed=True)
+            if self.debug:
+                print("Sanitizer checks passed")
+            return SanitizationResult()
+
     def check_for_ccomp_errors(
         self, program: SourceProgram
     ) -> SanitizationResult | None:
@@ -401,7 +471,7 @@ class Sanitizer:
         """Runs all the enabled sanitization checks.
 
         Runs all available sanitization checks based on self.checked_warnings,
-        self.use_ub_address_sanitizer, and self.ccomp. It reports if any of them
+        self.use_ub_address_sanitizer, self.use_memory_sanitizer and self.ccomp. It reports if any of them
         failed or if some check timed out.
 
         Args:
@@ -420,6 +490,11 @@ class Sanitizer:
 
         if self.use_ub_address_sanitizer and not (
             sanitizer_result := self.check_for_ub_and_address_sanitizer_errors(program)
+        ):
+            return sanitizer_result
+
+        if self.use_memory_sanitizer and not (
+            sanitizer_result := self.check_for_memory_sanitizer_errors(program)
         ):
             return sanitizer_result
 
