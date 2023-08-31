@@ -63,12 +63,14 @@ def test_check_for_compiler_warnings() -> None:
         '{int a = 2147483647;printf("a+1: %d", a+1);}',
     ],
 )
-def test_sanitizer(code: str) -> None:
+def test_ub_and_address_sanitizer(code: str) -> None:
     clang = find_clang()
     assert clang, "Could not find a clang executable"
     san = Sanitizer(clang=clang, debug=True)
     p = SourceProgram(code=code, language=Language.C)
-    assert san.check_for_ub_and_address_sanitizer_errors(p).ub_address_sanitizer_failed
+    assert san.check_for_sanitizer_errors(
+        p, sanitizer_flag="undefined,address"
+    ).sanitizer_failed
 
 
 @pytest.mark.parametrize(
@@ -87,7 +89,7 @@ def test_memory_sanitizer(code: str) -> None:
         debug=True,
     )
     p = SourceProgram(code=code, language=Language.C)
-    assert san.check_for_memory_sanitizer_errors(p).memory_sanitizer_failed
+    assert san.check_for_sanitizer_errors(p, sanitizer_flag="memory").sanitizer_failed
 
 
 if __name__ == "__main__":
