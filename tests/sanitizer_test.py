@@ -61,6 +61,7 @@ def test_check_for_compiler_warnings() -> None:
         "int main(){ int a[1] = {0}; return a[1];}",
         "int printf(const char *, ...); int main()"
         '{int a = 2147483647;printf("a+1: %d", a+1);}',
+        "int *g;" "void foo(int x) { g = &x;}" "int main(){foo(0); return *g;}",
     ],
 )
 def test_ub_and_address_sanitizer(code: str) -> None:

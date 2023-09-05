@@ -360,7 +360,13 @@ class Sanitizer:
 
             # Run the instrumented binary
             try:
-                run_cmd(str(result.output.filename), timeout=self.execution_timeout)
+                run_cmd(
+                    str(result.output.filename),
+                    timeout=self.execution_timeout,
+                    additional_env={
+                        "ASAN_OPTIONS": "detect_stack_use_after_return=1",
+                    },
+                )
             except subprocess.TimeoutExpired:
                 if self.debug:
                     print("Compilation timed out")
