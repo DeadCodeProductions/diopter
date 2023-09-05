@@ -162,7 +162,7 @@ class Sanitizer:
         clang: CompilerExe | None = None,
         ccomp: CComp | None = None,
         check_warnings_opt_level: OptLevel = OptLevel.O3,
-        sanitizer_opt_level: OptLevel = OptLevel.O1,
+        sanitizer_opt_level: OptLevel = OptLevel.O0,
         checked_warnings: tuple[str, ...] | None = None,
         use_gnu2x_if_available: bool = True,
         compilation_timeout: int = 8,
@@ -345,7 +345,6 @@ class Sanitizer:
                         "-Wno-builtin-declaration-mismatch",
                         "-fsanitize=" + sanitizer_flag,
                         "-fno-sanitize-recover=all",
-                        "-O0",
                     ),
                     timeout=self.compilation_timeout,
                 )
