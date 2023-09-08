@@ -115,6 +115,29 @@ class Language(Enum):
             case Language.CPP:
                 return ".cpp"
 
+    def to_json_dict(self) -> dict[str, Any]:
+        """Returns a dictionary that can be serialized to json.
+
+        Returns:
+            dict[str, Any]:
+                the dictionary
+        """
+        return {"name": self.name}
+
+    @staticmethod
+    def from_json_dict(d: dict[str, Any]) -> Language:
+        """Returns a language parsed from a json dictionary.
+
+        Args:
+            d (dict[str, Any]):
+                the dictionary
+
+        Returns:
+            Language:
+                the language
+        """
+        return Language[d["name"]]
+
 
 @dataclass(frozen=True)
 class SourcePath:
@@ -131,12 +154,10 @@ class SourcePath:
 
 @dataclass(frozen=True, kw_only=True)
 class Source(ABC):
-    """A C or C++ base class for source programs together
+    """A base class for C or C++source programs together
        with flags, includes and macro definitions.
 
     Attributes:
-        code (str):
-            the source code
         language (Language):
             the program's language
         defined_macros (tuple[str,...]):
@@ -198,7 +219,122 @@ class Source(ABC):
 
     @abstractmethod
     def get_filename(self) -> SourcePath:
-        pass
+        raise NotImplementedError
+
+    def to_json_dict(self) -> dict[str, Any]:
+        """Returns a dictionary that can be serialized to json.
+
+        Can be re-parses with Source.from_json_dict.
+
+        Returns:
+            dict[str, Any]:
+                the dictionary
+        """
+        j = {
+            "language": self.language.to_json_dict(),
+            "defined_macros": self.defined_macros,
+            "include_paths": self.include_paths,
+            "system_include_paths": self.system_include_paths,
+            "flags": self.flags,
+        }
+
+        j |= self.to_json_dict_impl()
+
+        assert set(j.keys()) == set(field.name for field in fields(self)) | set(
+            ("kind",)
+        )
+
+        return j
+
+    @abstractmethod
+    def to_json_dict_impl(self) -> dict[str, Any]:
+        """Returns a dictionary that can be serialized to json.
+
+        Subclasses should implement this method and serialize
+        their specific attributes.
+
+
+        Returns:
+            dict[str, Any]:
+                the dictionary
+        """
+        raise NotImplementedError
+
+    @classmethod
+    def from_json_dict(cls, d: dict[str, Any]) -> Source:
+        """Returns a source parsed from a json dictionary.
+
+        Args:
+            d (dict[str, Any]):
+                the dictionary
+
+        Returns:
+            Source:
+                the source
+        """
+        if cls is Source:
+            match d["kind"]:
+                case "SourceFile":
+                    return SourceFile.from_json_dict_impl(
+                        d,
+                        language=Language.from_json_dict(d["language"]),
+                        defined_macros=tuple(d["defined_macros"]),
+                        include_paths=tuple(d["include_paths"]),
+                        system_include_paths=tuple(d["system_include_paths"]),
+                        flags=tuple(d["flags"]),
+                    )
+                case "SourceProgram":
+                    return SourceProgram.from_json_dict_impl(
+                        d,
+                        language=Language.from_json_dict(d["language"]),
+                        defined_macros=tuple(d["defined_macros"]),
+                        include_paths=tuple(d["include_paths"]),
+                        system_include_paths=tuple(d["system_include_paths"]),
+                        flags=tuple(d["flags"]),
+                    )
+
+                case _:
+                    raise ValueError(f"Unknown kind: {d['kind']}")
+        else:
+            return cls.from_json_dict_impl(
+                d,
+                language=Language.from_json_dict(d["language"]),
+                defined_macros=tuple(d["defined_macros"]),
+                include_paths=tuple(d["include_paths"]),
+                system_include_paths=tuple(d["system_include_paths"]),
+                flags=tuple(d["flags"]),
+            )
+
+    @staticmethod
+    @abstractmethod
+    def from_json_dict_impl(
+        d: dict[str, Any],
+        language: Language,
+        defined_macros: tuple[str, ...],
+        include_paths: tuple[str, ...],
+        system_include_paths: tuple[str, ...],
+        flags: tuple[str, ...],
+    ) -> Source:
+        """Returns a source parsed from a json dictionary.
+
+        Subclasses should implement this and parse their
+        specific attributes from the dictionary.
+
+        Args:
+           d (dict[str, Any]):
+               the dictionary
+           language (Language):
+               the program's language
+           defined_macros (tuple[str,...]):
+               macros that will be defined when compiling this program
+           include_paths (tuple[str,...]):
+               include paths which will be passed to the compiler (with -I)
+           system_include_paths (tuple[str,...]):
+               system include paths which will be passed to the compiler (with -isystem)
+           flags (tuple[str,...]):
+               flags, prefixed with a dash ("-") that will be passed to the compiler
+        """
+        raise NotImplementedError
 
 
 ProgramType = TypeVar("ProgramType", bound="SourceProgram")
@@ -274,6 +410,51 @@ class SourceProgram(Source):
         """
         return replace(self, code=new_code)
 
+    @staticmethod
+    def from_json_dict_impl(
+        d: dict[str, Any],
+        language: Language,
+        defined_macros: tuple[str, ...],
+        include_paths: tuple[str, ...],
+        system_include_paths: tuple[str, ...],
+        flags: tuple[str, ...],
+    ) -> SourceProgram:
+        """Returns a source program  parsed from a json dictionary.
+
+        Args:
+           d (dict[str, Any]):
+               the dictionary
+           language (Language):
+               the program's language
+           defined_macros (tuple[str,...]):
+               macros that will be defined when compiling this program
+           include_paths (tuple[str,...]):
+               include paths which will be passed to the compiler (with -I)
+           system_include_paths (tuple[str,...]):
+               system include paths which will be passed to the compiler (with -isystem)
+           flags (tuple[str,...]):
+               flags, prefixed with a dash ("-") that will be passed to the compiler
+        """
+        assert d["kind"] == "SourceProgram"
+        return SourceProgram(
+            code=d["code"],
+            language=language,
+            defined_macros=defined_macros,
+            include_paths=include_paths,
+            system_include_paths=system_include_paths,
+            flags=flags,
+        )
+
+    def to_json_dict_impl(self) -> dict[str, Any]:
+        """Returns a dictionary representation of this source program,
+        only including the SourceProgram specific attributes.
+
+        Returns:
+            dict[str, Any]:
+                the dictionary
+        """
+        return {"kind": "SourceProgram", "code": self.code}
+
 
 @dataclass(frozen=True, kw_only=True)
 class SourceFile(Source):
@@ -303,6 +484,51 @@ class SourceFile(Source):
 
     def get_filename(self) -> SourcePath:
         return SourcePath(self.filename, None)
+
+    @staticmethod
+    def from_json_dict_impl(
+        d: dict[str, Any],
+        language: Language,
+        defined_macros: tuple[str, ...],
+        include_paths: tuple[str, ...],
+        system_include_paths: tuple[str, ...],
+        flags: tuple[str, ...],
+    ) -> SourceFile:
+        """Returns a source file  parsed from a json dictionary.
+
+        Args:
+           d (dict[str, Any]):
+               the dictionary
+           language (Language):
+               the program's language
+           defined_macros (tuple[str,...]):
+               macros that will be defined when compiling this program
+           include_paths (tuple[str,...]):
+               include paths which will be passed to the compiler (with -I)
+           system_include_paths (tuple[str,...]):
+               system include paths which will be passed to the compiler (with -isystem)
+           flags (tuple[str,...]):
+               flags, prefixed with a dash ("-") that will be passed to the compiler
+        """
+        assert d["kind"] == "SourceFile"
+        return SourceFile(
+            filename=Path(d["filename"]),
+            language=language,
+            defined_macros=defined_macros,
+            include_paths=include_paths,
+            system_include_paths=system_include_paths,
+            flags=flags,
+        )
+
+    def to_json_dict_impl(self) -> dict[str, Any]:
+        """Returns a dictionary representation of this source program,
+        only including the SourceFile specific attributes.
+
+        Returns:
+            dict[str, Any]:
+                the dictionary
+        """
+        return {"kind": "SourceFile", "filename": self.filename}
 
 
 Revision = str
