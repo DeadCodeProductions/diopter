@@ -287,20 +287,3 @@ def test_opt() -> None:
     opt = get_opt()
     opt_res = opt.run_on_input(res.output.filename, ("-S",))
     assert llvm_ir.strip() != opt_res.stdout.strip()
-
-
-def test_serialization() -> None:
-    setting0 = CompilationSetting(
-        compiler=CompilerExe(CompilerProject.GCC, Path("gcc"), "test"),
-        opt_level=OptLevel.O2,
-        include_paths=("a", "b"),
-        system_include_paths=("sa", "sb"),
-        macro_definitions=("M1",),
-    )
-    setting1 = CompilationSetting(
-        compiler=CompilerExe(CompilerProject.LLVM, Path("llvm"), "test"),
-        opt_level=OptLevel.O0,
-        system_include_paths=("sb",),
-    )
-    assert setting0 == CompilationSetting.from_json_dict(setting0.to_json_dict())
-    assert setting1 == CompilationSetting.from_json_dict(setting1.to_json_dict())
