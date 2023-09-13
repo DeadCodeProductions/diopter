@@ -1292,8 +1292,8 @@ class CompilationSetting:
     def preprocess_program(
         self,
         program: ProgramType,
-        make_compiler_agnostic: bool = False,
         additional_flags: tuple[str, ...] = tuple(),
+        do_not_expand_includes: tuple[str, ...] = tuple(),
         timeout: int | None = None,
     ) -> ProgramType:
         """Preprocesses the program
@@ -1303,9 +1303,9 @@ class CompilationSetting:
                 input program
             additional_flags (tuple[str, ...]):
                 additional flags used for the compilation
-            make_compiler_agnostic (bool):
-                if true will try to remove certain constructs (e.g., attributes)
-                such that the resulting program can be compiled with both gcc and clang
+            do_not_expand_includes (tuple[str, ...]):
+                include directives that should not be expanded,
+                this only works with <...> includes
             timeout (int | None):
                 timeout in seconds for the compilation command
 
@@ -1313,6 +1313,18 @@ class CompilationSetting:
             ProgramType:
                 the prepocessed program
         """
+
+        if do_not_expand_includes:
+            tmpdir = tempfile.TemporaryDirectory()
+            for include in do_not_expand_includes:
+                p = Path(tmpdir.name) / Path(include)
+                if not p.parent.exists():
+                    p.parent.mkdir(parents=True)
+                with open(p, "w") as f:
+                    print(
+                        f"//unpreprocessed_include_#include <{include}>", file=f, end=""
+                    )
+            additional_flags += ("-I", tmpdir.name, "-C")
 
         result = self.compile_program(
             program,
@@ -1322,26 +1334,10 @@ class CompilationSetting:
         )
         preprocessed_source = result.output.read()
 
-        if make_compiler_agnostic:
-            # remove malloc attributes with args, clang doesn't understand these
-            preprocessed_source = re.sub(
-                r"__attribute__ \(\(__malloc__ \(.*, .*\)\)\)", r"", preprocessed_source
+        if do_not_expand_includes:
+            preprocessed_source = preprocessed_source.replace(
+                "//unpreprocessed_include_", ""
             )
-            # remove f128 builtins builtins, clang doesn't understand these
-            preprocessed_source = re.sub(
-                r"extern int [^;]*f128[^;]*;", r"", preprocessed_source
-            )
-            # remove Float*** typedefs, gcc doesn't like these
-            preprocessed_source = re.sub(
-                r"typedef [^;]*_Float\d+x?;", r"", preprocessed_source
-            )
-            # replace remaining FloatX types with the standard ones
-            preprocessed_source = re.sub(r"_Float32x", r"double", preprocessed_source)
-            preprocessed_source = re.sub(
-                r"_Float64x", r"long double", preprocessed_source
-            )
-            preprocessed_source = re.sub(r"_Float32", r"float", preprocessed_source)
-            preprocessed_source = re.sub(r"_Float64", r"double", preprocessed_source)
 
         return program.with_preprocessed_code(preprocessed_source)
 

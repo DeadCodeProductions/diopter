@@ -1,1 +1,3 @@
 include diopter/py.typed
+include diopter/gcc_includes
+include diopter/glibc_includes

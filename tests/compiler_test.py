@@ -134,7 +134,7 @@ def test_preprocess() -> None:
     program = SourceProgram(code=input_code, language=Language.C)
     compiler = CompilerExe(CompilerProject.GCC, Path("gcc"), "")
     cs = CompilationSetting(compiler=compiler, opt_level=OptLevel.O2)
-    pp_code = cs.preprocess_program(program, False, ("-DMACRO2=33",)).code
+    pp_code = cs.preprocess_program(program, ("-DMACRO2=33",)).code
     assert "".join(pp_code.split()) == "".join(
         "int foo(){ return 4 + 33; }".split()
     ), pp_code
