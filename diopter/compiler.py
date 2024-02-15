@@ -47,6 +47,7 @@ output = res.output.run(("-flag",))
 # The output should be 2
 assert output.stdout.strip() == "2"
 """
+
 from __future__ import annotations
 
 import argparse
@@ -1185,9 +1186,11 @@ class CompilationSetting:
                     str(self.compiler.exe),
                     f"-{self.opt_level.name}",
                 ),
-                (program[0].language.get_language_flag(),)
-                if include_language_flags
-                else ("",),
+                (
+                    (program[0].language.get_language_flag(),)
+                    if include_language_flags
+                    else ("",)
+                ),
                 self.flags,
                 (f"-I{path}" for path in self.include_paths),
                 (f"-isystem{path}" for path in self.system_include_paths),

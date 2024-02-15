@@ -11,6 +11,7 @@ sanitizer = Sanitizer()
 if not sanitizer.sanitize(program):
     # the program is broken
 """
+
 from __future__ import annotations
 
 import subprocess
