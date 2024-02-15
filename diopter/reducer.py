@@ -20,6 +20,7 @@ rprogram = reducer.reduce(program, ReductionCheck(Sanitizer(), ...))
 if rprogram:
     #the reduction was successful
 """
+
 import inspect
 import logging
 import os
