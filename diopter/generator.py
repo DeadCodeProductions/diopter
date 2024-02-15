@@ -89,7 +89,6 @@ class CSmithGenerator(Generator):
     default_options_pool = [
         "arrays",
         "bitfields",
-        "checksum",
         "comma-operators",
         "compound-assignment",
         "consts",
