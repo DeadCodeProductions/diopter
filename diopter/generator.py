@@ -243,9 +243,12 @@ class YarpGen(Generator):
             cmd = [self.yarpgen, lang_flag, "-o", str(temp_dir.resolve())] + list(
                 self.additional_flags
             )
-            result = subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
-            )
+            for _ in range(100):
+                result = subprocess.run(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+                )
+                if result.returncode == 0:
+                    break
             assert result.returncode == 0, result.stdout.decode("utf-8")
             driver_str = (temp_dir / ("driver" + self.language.to_suffix())).read_text()
             func_str = (
