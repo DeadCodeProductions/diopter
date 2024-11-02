@@ -364,7 +364,7 @@ class Sanitizer:
                     str(result.output.filename),
                     timeout=self.execution_timeout,
                     additional_env={
-                        "ASAN_OPTIONS": "detect_stack_use_after_return=1",
+                        "ASAN_OPTIONS": "detect_stack_use_after_return=1,detect_leaks=0",
                     },
                 )
             except subprocess.TimeoutExpired:
