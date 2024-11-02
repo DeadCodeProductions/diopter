@@ -3,6 +3,7 @@ import shlex
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from types import TracebackType
 from typing import IO, Any, TextIO, Union
@@ -142,3 +143,19 @@ def temporary_file(
         with open(ntf.name, "w") as f:
             f.write(contents)
     return ntf
+
+
+@cache
+def standard_includes() -> tuple[str, ...]:
+    """Returns a string containing a tuple of include
+    files derived from GCC and GLIBC.
+
+    Returns:
+        tuple[str, ...]:
+            standard C and C++ includes
+    """
+    with open(Path(__file__).parent / "gcc_includes", "r") as f:
+        gcc_includes = tuple(line.strip() for line in f.readlines())
+    with open(Path(__file__).parent / "glibc_includes", "r") as f:
+        glibc_includes = tuple(line.strip() for line in f.readlines())
+    return gcc_includes + glibc_includes
