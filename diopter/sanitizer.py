@@ -100,6 +100,8 @@ class Sanitizer:
             optimization level used when checking for warnings
         sanitizer_opt_level (OptLevel):
             optimization level used when running sanitizers
+        sanitizer_env_variables (dict[str, str]):
+            environment variables for sanitizers
         use_gnu2x (bool):
             if True then gnu2x will be used when checking for compiler warnings
         compilation_timeout (int):
@@ -164,6 +166,9 @@ class Sanitizer:
         ccomp: CComp | None = None,
         check_warnings_opt_level: OptLevel = OptLevel.O3,
         sanitizer_opt_level: OptLevel = OptLevel.O0,
+        sanitizer_env_variables: dict[str, str] = {
+            "ASAN_OPTIONS": "detect_stack_use_after_return=1"
+        },
         checked_warnings: tuple[str, ...] | None = None,
         use_gnu2x_if_available: bool = True,
         compilation_timeout: int = 8,
@@ -197,6 +202,8 @@ class Sanitizer:
             sanitizer_opt_level (OptLevel):
                 which optimization level to use when checking
                 for ub/address sanitizer issues
+            sanitizer_env_variables (dict[str,str]):
+                environment variables to use when running sanitizers
             checked_warnings (tuple[str,...] | None):
                 if not None implies check_warnings = True and will
                 be used instead of Sanitizer.default_warnings
@@ -226,6 +233,7 @@ class Sanitizer:
         self.use_memory_sanitizer = use_memory_sanitizer
         self.check_warnings_opt_level = check_warnings_opt_level
         self.sanitizer_opt_level = sanitizer_opt_level
+        self.sanitizer_env_variables = sanitizer_env_variables
         self.compilation_timeout = compilation_timeout
         self.execution_timeout = execution_timeout
         self.ccomp_timeout = ccomp_timeout
@@ -363,9 +371,7 @@ class Sanitizer:
                 run_cmd(
                     str(result.output.filename),
                     timeout=self.execution_timeout,
-                    additional_env={
-                        "ASAN_OPTIONS": "detect_stack_use_after_return=1",
-                    },
+                    additional_env=self.sanitizer_env_variables,
                 )
             except subprocess.TimeoutExpired:
                 if self.debug:
