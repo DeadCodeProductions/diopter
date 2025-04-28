@@ -62,7 +62,7 @@ if __name__ == "__main__":
     sanitizer = Sanitizer()
     while True:
         p = CSmithGenerator(sanitizer).generate_program()
-        p = Os.preprocess_program(p, make_compiler_agnostic=True)
+        p = Os.preprocess_program(p)
         if filter(p, O3, Os):
             break
     print(f"O3 size: {get_size(p, O3)}")
